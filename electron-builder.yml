@@ -1,43 +1,57 @@
-appId: com.electron.app
-productName: react-ts
+appId: com.sam.mechbay
+productName: MechBay
 directories:
   buildResources: build
 files:
   - '!**/.vscode/*'
   - '!src/*'
+  - '!test/*'
+  - '!docs/*'
+  - '!.tmp/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
 asarUnpack:
   - resources/**
+  - out/renderer/assets/*.png
 win:
-  executableName: react-ts
+  executableName: MechBay
+  # DECISION NEEDED (before first shipped build): code-signing.
+  # Unsigned Windows binaries will trip SmartScreen's "unrecognized app"
+  # warning on first launch. Options:
+  #   - Ship unsigned for dev/beta (current default, warning is
+  #     dismissable with "More info → Run anyway")
+  #   - Buy an EV or standard Authenticode cert ($200-$500/yr) and add
+  #     `certificateFile` + `certificatePassword` env-var references here
+  # Revisit once MechBay goes beyond personal use.
 nsis:
-  artifactName: ${name}-${version}-setup.${ext}
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  artifactName: ${productName}-${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
+  category: public.app-category.developer-tools
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
-    - NSCameraUsageDescription: Application requests access to the device's camera.
-    - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
-    - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
-    - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
+    - NSDocumentsFolderUsageDescription: MechBay opens project directories you select to stream CLI output and show file trees.
   notarize: false
 dmg:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: ${productName}-${version}.${ext}
 linux:
   target:
     - AppImage
-    - snap
-    - deb
-  maintainer: electronjs.org
-  category: Utility
+  maintainer: Sam Albanese <samalbanesedev@gmail.com>
+  category: Development
+  desktop:
+    entry:
+      Name: MechBay
+      Comment: Battletech for AI coding agents
 appImage:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: ${productName}-${version}.${ext}
 npmRebuild: false
-publish:
-  provider: generic
-  url: https://example.com/auto-updates
+# Auto-update publishing not configured yet — this block is intentionally
+# omitted. electron-builder will skip publish on missing config. Add a
+# `publish:` block pointing to a GitHub Release or an S3 bucket when ready.
