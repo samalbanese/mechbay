@@ -27,6 +27,7 @@
     "@electron-toolkit/utils": "^4.0.0",
     "electron-store": "^10.0.1",
     "mitt": "^3.0.1",
+    "phaser": "^3.90.0",
     "ulid": "^2.4.0"
   },
   "devDependencies": {

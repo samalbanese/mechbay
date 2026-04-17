@@ -1,21 +1,79 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import Phaser from 'phaser'
 import type { AppState, LogChunk } from '../../shared/types'
+import { BayScene } from './game/BayScene'
+import { bus } from './bus'
 
 function App(): React.JSX.Element {
   const [state, setState] = useState<AppState | null>(null)
   const [logs, setLogs] = useState<LogChunk[]>([])
-  const [prompt, setPrompt] = useState('echo hello from claude')
+  const [selectedCompanionId, setSelectedCompanionId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const canvasParentRef = useRef<HTMLDivElement>(null)
+  const sceneRef = useRef<BayScene | null>(null)
+  const gameRef = useRef<Phaser.Game | null>(null)
+
+  // Subscribe to IPC state + log chunks
   useEffect(() => {
     window.mechbay.getState().then(setState).catch((e) => setError(String(e)))
     const offState = window.mechbay.onStateChange(setState)
-    const offLog = window.mechbay.onLogChunk((c) => setLogs((prev) => [...prev, c]))
+    const offLog = window.mechbay.onLogChunk((c) => setLogs((prev) => [...prev.slice(-499), c]))
     return () => {
       offState()
       offLog()
     }
   }, [])
+
+  // Mount Phaser once
+  useEffect(() => {
+    if (!canvasParentRef.current || gameRef.current) return
+    const scene = new BayScene()
+    sceneRef.current = scene
+    gameRef.current = new Phaser.Game({
+      type: Phaser.AUTO,
+      parent: canvasParentRef.current,
+      width: canvasParentRef.current.clientWidth || 1100,
+      height: 520,
+      backgroundColor: '#0a0805',
+      scene,
+      scale: { mode: Phaser.Scale.RESIZE }
+    })
+
+    const offDrop = (payload: { companionId: string; facilityId: string }): void => {
+      const prompt = window.prompt(
+        'Task prompt for Atlas-Prime:',
+        'Explore this project and summarize its structure.'
+      )
+      if (prompt) {
+        window.mechbay
+          .deployStart({
+            companionId: payload.companionId,
+            facilityId: payload.facilityId,
+            taskPrompt: prompt
+          })
+          .catch((e) => alert(`Deploy failed: ${e instanceof Error ? e.message : String(e)}`))
+      }
+    }
+    const offSelect = (payload: { companionId: string | null }): void => {
+      setSelectedCompanionId(payload.companionId)
+    }
+    bus.on('dropOnFacility', offDrop)
+    bus.on('companionSelected', offSelect)
+
+    return () => {
+      bus.off('dropOnFacility', offDrop)
+      bus.off('companionSelected', offSelect)
+      gameRef.current?.destroy(true)
+      gameRef.current = null
+      sceneRef.current = null
+    }
+  }, [])
+
+  // Push state into Phaser whenever it changes
+  useEffect(() => {
+    if (state) sceneRef.current?.setState(state)
+  }, [state])
 
   if (error) {
     return (
@@ -26,150 +84,159 @@ function App(): React.JSX.Element {
     )
   }
 
-  if (!state) return <div style={shellStyle}>⚙ MECHBAY · LOADING…</div>
-
-  const claude = state.companions.find((c) => c.family === 'claude')
-  const firstFacility = state.facilities[0]
-  const activeCount = state.deployments.filter((d) =>
-    ['walking-to', 'working', 'awaiting-input', 'returning'].includes(d.status)
-  ).length
-
-  async function deploy(): Promise<void> {
-    if (!claude) {
-      alert('No Claude companion found in state.')
-      return
-    }
-    if (!firstFacility) {
-      alert(
-        'No facilities. Add one to state.json manually for now (see HANDOFF.md or Wave 1 Task 1.7).'
-      )
-      return
-    }
-    try {
-      await window.mechbay.deployStart({
-        companionId: claude.id,
-        facilityId: firstFacility.id,
-        taskPrompt: prompt
-      })
-    } catch (e) {
-      alert(`Deploy failed: ${e instanceof Error ? e.message : String(e)}`)
-    }
-  }
+  const activeCount =
+    state?.deployments.filter((d) =>
+      ['walking-to', 'working', 'awaiting-input', 'returning'].includes(d.status)
+    ).length ?? 0
+  const queueCount = state?.deployments.filter((d) => d.status === 'queued').length ?? 0
+  const selectedCompanion = state?.companions.find((c) => c.id === selectedCompanionId) ?? null
 
   return (
     <div style={shellStyle}>
-      <h1 style={{ borderBottom: '2px solid #e85f00', paddingBottom: 8, marginTop: 0 }}>
-        ⚙ MECHBAY · WAVE 1 PLUMBING
-      </h1>
-
-      <div style={statRowStyle}>
-        <Stat label="COMPANIONS" value={state.companions.length} />
-        <Stat label="FACILITIES" value={state.facilities.length} />
-        <Stat label="ACTIVE" value={`${activeCount} / ${state.settings.concurrencyCap}`} />
-        <Stat label="QUEUE" value={state.deployments.filter((d) => d.status === 'queued').length} />
-      </div>
-
-      <div style={{ marginBottom: 12 }}>
-        <strong style={{ color: '#ffcc33' }}>{claude?.name ?? 'Atlas-Prime'}</strong>{' '}
-        <span style={{ color: '#888' }}>
-          → {firstFacility ? firstFacility.name : '(no facility seeded)'}
+      {/* Top HUD (Wave 2 placeholder, Task 2.3 formalizes) */}
+      <div style={hudTopStyle}>
+        <span>
+          <span style={ledStyle}></span>CMDR SAM · BAY 01
+        </span>
+        <span>
+          MECHS: {state?.companions.length ?? 0} · FACILITIES: {state?.facilities.length ?? 0}
+        </span>
+        <span style={{ color: queueCount > 0 ? '#ffcc33' : '#e85f00' }}>
+          ACTIVE: {activeCount} / {state?.settings.concurrencyCap ?? 3}
+          {queueCount > 0 && ` · QUEUE: ${queueCount}`}
         </span>
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <input
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          style={inputStyle}
-          placeholder="Task prompt for Claude…"
-        />
-        <button onClick={deploy} style={buttonStyle} disabled={!claude || !firstFacility}>
-          DEPLOY ATLAS-PRIME
-        </button>
+      <div style={mainStyle}>
+        <div ref={canvasParentRef} style={canvasParentStyle} />
+
+        {/* Sidebar: companion stats + live log */}
+        <div style={sidebarStyle}>
+          {selectedCompanion && (
+            <div style={sidebarPanelStyle}>
+              <div style={{ color: '#ffcc33', fontSize: 11, letterSpacing: '0.15em' }}>
+                SELECTED
+              </div>
+              <div style={{ fontSize: 16, margin: '4px 0' }}>{selectedCompanion.name}</div>
+              <div style={{ fontSize: 11, color: '#888' }}>
+                {selectedCompanion.mechClass.toUpperCase()} · {selectedCompanion.family}
+              </div>
+              <div style={{ fontSize: 11, marginTop: 6 }}>
+                CLI:{' '}
+                <span style={{ color: selectedCompanion.cliAvailable ? '#0f0' : '#f44' }}>
+                  {selectedCompanion.cliAvailable ? 'AVAILABLE' : '⚠ NOT DEPLOYABLE'}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div style={{ ...sidebarPanelStyle, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ color: '#ffcc33', fontSize: 11, letterSpacing: '0.15em', marginBottom: 6 }}>
+              LIVE LOG
+            </div>
+            <pre style={logPaneStyle}>
+              {logs.length === 0
+                ? '(drag a mech onto a facility to deploy)'
+                : logs.map((l) => `[${l.stream}] ${l.text}`).join('')}
+            </pre>
+          </div>
+        </div>
       </div>
 
-      <h2 style={{ color: '#ffcc33', marginTop: 24 }}>LIVE LOG</h2>
-      <pre style={logPaneStyle}>
-        {logs.length === 0
-          ? '(no log chunks yet — deploy to see streamed Claude output)'
-          : logs.map((l) => `[${l.stream}] ${l.text}`).join('')}
-      </pre>
-
-      <h2 style={{ color: '#ffcc33', marginTop: 24 }}>DEPLOYMENTS</h2>
-      <pre style={logPaneStyle}>
-        {state.deployments.length === 0
-          ? '(no deployments yet)'
-          : state.deployments
-              .slice(0, 10)
-              .map(
-                (d) =>
-                  `${d.status.padEnd(15)} ${new Date(d.startedAt).toISOString().slice(11, 19)}  ${d.taskPrompt.slice(0, 60)}`
-              )
-              .join('\n')}
-      </pre>
+      {/* Bottom HUD */}
+      <div style={hudBottomStyle}>
+        <span>⟨DRAG⟩ DEPLOY · ⟨CLICK⟩ SELECT · ⟨ESC⟩ CANCEL</span>
+        <span>{new Date().toLocaleTimeString()}</span>
+      </div>
     </div>
   )
 }
 
-function Stat({ label, value }: { label: string; value: number | string }): React.JSX.Element {
-  return (
-    <div style={{ marginRight: 24 }}>
-      <div style={{ fontSize: 10, color: '#888', letterSpacing: '0.1em' }}>{label}</div>
-      <div style={{ fontSize: 18, color: '#e85f00' }}>{value}</div>
-    </div>
-  )
-}
+const HUD_HEIGHT = 32
 
 const shellStyle: React.CSSProperties = {
   fontFamily: '"Courier New", monospace',
-  padding: 24,
   color: '#e85f00',
   background: '#0a0805',
   minHeight: '100vh',
-  fontSize: 14
-}
-
-const statRowStyle: React.CSSProperties = {
   display: 'flex',
-  marginBottom: 16,
-  padding: 12,
-  background: '#1a1510',
-  border: '1px solid #2a2520'
-}
-
-const inputStyle: React.CSSProperties = {
-  flex: 1,
-  background: '#1a1510',
-  color: '#fff',
-  border: '1px solid #e85f00',
-  padding: '8px 12px',
-  fontFamily: 'inherit',
+  flexDirection: 'column',
   fontSize: 14
 }
 
-const buttonStyle: React.CSSProperties = {
-  background: '#e85f00',
-  color: '#000',
-  border: 0,
-  padding: '8px 20px',
-  fontFamily: 'inherit',
-  fontSize: 14,
-  fontWeight: 'bold',
-  cursor: 'pointer',
-  letterSpacing: '0.05em'
+const hudBaseStyle: React.CSSProperties = {
+  background: '#1a1510',
+  borderColor: '#e85f00',
+  borderStyle: 'solid',
+  padding: '6px 16px',
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  fontSize: 11,
+  letterSpacing: '0.1em',
+  height: HUD_HEIGHT
+}
+
+const hudTopStyle: React.CSSProperties = {
+  ...hudBaseStyle,
+  borderWidth: '0 0 2px 0'
+}
+
+const hudBottomStyle: React.CSSProperties = {
+  ...hudBaseStyle,
+  borderWidth: '2px 0 0 0'
+}
+
+const ledStyle: React.CSSProperties = {
+  display: 'inline-block',
+  width: 8,
+  height: 8,
+  borderRadius: '50%',
+  background: '#0f0',
+  marginRight: 6
+}
+
+const mainStyle: React.CSSProperties = {
+  flex: 1,
+  display: 'flex',
+  minHeight: 0
+}
+
+const canvasParentStyle: React.CSSProperties = {
+  flex: 1,
+  background: '#0a0805',
+  overflow: 'hidden',
+  minWidth: 0
+}
+
+const sidebarStyle: React.CSSProperties = {
+  width: 360,
+  borderLeft: '1px solid #2a2520',
+  padding: 12,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 12,
+  minHeight: 0
+}
+
+const sidebarPanelStyle: React.CSSProperties = {
+  background: '#1a1510',
+  border: '1px solid #2a2520',
+  padding: 10,
+  fontSize: 12
 }
 
 const logPaneStyle: React.CSSProperties = {
-  background: '#1a1510',
-  border: '1px solid #2a2520',
-  padding: 12,
-  maxHeight: 240,
+  background: '#0a0805',
+  padding: 8,
+  flex: 1,
   overflow: 'auto',
   color: '#ccc',
   fontFamily: 'inherit',
-  fontSize: 12,
+  fontSize: 11,
   whiteSpace: 'pre-wrap',
-  margin: 0
+  margin: 0,
+  minHeight: 0
 }
 
 export default App
