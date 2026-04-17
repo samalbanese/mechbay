@@ -77,7 +77,7 @@ export interface LogChunk {
 }
 
 export interface AppState {
-  version: 1
+  version: number
   companions: Companion[]
   facilities: Facility[]
   deployments: Deployment[]

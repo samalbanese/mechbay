@@ -64,6 +64,7 @@ export class BayScene extends Phaser.Scene {
   private state: AppState | null = null
   private mechSprites = new Map<string, Phaser.GameObjects.Image>()
   private facilitySprites = new Map<string, Phaser.GameObjects.Image>()
+  private smokeEmitters = new Map<string, Phaser.GameObjects.Particles.ParticleEmitter>()
 
   constructor() {
     super('BayScene')
@@ -107,8 +108,27 @@ export class BayScene extends Phaser.Scene {
     this.cameras.main.centerOn(center.x, center.y)
     // Zoom out enough to show the whole bay in a ~1100×640 viewport.
     this.cameras.main.setZoom(0.65)
+    this.generateSmokeTexture()
     this.drawGround()
     if (this.state) this.render()
+  }
+
+  /**
+   * Build a soft gray blob texture at runtime (rather than shipping a PNG)
+   * — used as the particle for dead-in-field smoke. Radial gradient, white
+   * core fading to transparent, recolored on emit via particleConfig.tint.
+   */
+  private generateSmokeTexture(): void {
+    if (this.textures.exists('smoke')) return
+    const size = 32
+    const g = this.add.graphics({ x: 0, y: 0 })
+    for (let r = size / 2; r > 0; r--) {
+      const alpha = (r / (size / 2)) * 0.15
+      g.fillStyle(0xffffff, alpha)
+      g.fillCircle(size / 2, size / 2, r)
+    }
+    g.generateTexture('smoke', size, size)
+    g.destroy()
   }
 
   /**
@@ -239,8 +259,54 @@ export class BayScene extends Phaser.Scene {
   }
 
   /**
+   * Dead-in-field: tint the mech gray, fade to 60% alpha, attach a
+   * smoke emitter at its feet, and wire a single-shot click handler to
+   * recover — restore full color + alpha and walk home. Called on the
+   * leading edge of a `failed` transition so it fires exactly once per
+   * failed deployment.
+   */
+  applyDeadInField(companionId: string): void {
+    const sprite = this.mechSprites.get(companionId)
+    if (!sprite) return
+
+    sprite.setTint(0x666666)
+    sprite.setAlpha(0.6)
+
+    const smoke = this.add.particles(sprite.x, sprite.y - 10, 'smoke', {
+      speed: { min: 10, max: 30 },
+      lifespan: 2000,
+      alpha: { start: 0.6, end: 0 },
+      scale: { start: 0.3, end: 0.9 },
+      frequency: 200,
+      tint: 0x555555
+    })
+    smoke.setDepth(sprite.depth + 1)
+    this.smokeEmitters.set(companionId, smoke)
+
+    sprite.setInteractive().once('pointerup', () => {
+      this.clearDeadInField(companionId)
+      const companion = this.state?.companions.find((c) => c.id === companionId)
+      if (companion) void this.walkTo(companionId, companion.homeTile)
+    })
+  }
+
+  private clearDeadInField(companionId: string): void {
+    const sprite = this.mechSprites.get(companionId)
+    if (sprite) {
+      sprite.clearTint()
+      sprite.setAlpha(1)
+    }
+    const smoke = this.smokeEmitters.get(companionId)
+    if (smoke) {
+      smoke.destroy()
+      this.smokeEmitters.delete(companionId)
+    }
+  }
+
+  /**
    * Diff two state snapshots and trigger animations for deployment
-   * status transitions (idle → walking-to, completed/cancelled → returning).
+   * status transitions (idle → walking-to, completed/cancelled → returning,
+   * any → failed).
    */
   private reactToDeploymentTransitions(prev: AppState, next: AppState): void {
     for (const dep of next.deployments) {
@@ -250,6 +316,10 @@ export class BayScene extends Phaser.Scene {
       if (dep.status === 'walking-to' && prevDep.status !== 'walking-to') {
         const facility = next.facilities.find((f) => f.id === dep.facilityId)
         if (facility) void this.walkTo(dep.companionId, facility.tile)
+      }
+
+      if (dep.status === 'failed' && prevDep.status !== 'failed') {
+        this.applyDeadInField(dep.companionId)
       }
 
       if (

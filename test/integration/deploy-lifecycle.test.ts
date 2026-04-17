@@ -77,8 +77,9 @@ describe('deployment lifecycle (integration)', () => {
     const sm2 = new StateManager(store, '/tmp/integration-test')
     const reloaded = sm2.getState()
     expect(reloaded.companions).toHaveLength(originalCount)
-    expect(reloaded.facilities).toHaveLength(1)
-    expect(reloaded.facilities[0].name).toBe('test-facility')
+    // 6 seeded facilities + 1 test-added = 7
+    expect(reloaded.facilities).toHaveLength(7)
+    expect(reloaded.facilities.some((f) => f.name === 'test-facility')).toBe(true)
   })
 
   it('captures stderr alongside stdout in chunk stream', async () => {

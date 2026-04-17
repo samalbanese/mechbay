@@ -64,12 +64,17 @@ function defaultState(userDataDir: string): AppState {
       return companion
     }),
     facilities: DEFAULT_FACILITY_MAP.map((f) => {
+      // Seed facilities have no associated project path yet — they become
+      // usable targets once the Project Scanner (Wave 6) binds them to a
+      // real directory, or when the user manually configures one.
       const facility: Facility = {
         id: ulid(),
         facilityType: f.facilityType,
         name: f.name,
         tile: f.tile,
-        spriteKey: `facility-${f.facilityType}`
+        path: '',
+        source: 'manual',
+        discoveredAt: Date.now()
       }
       return facility
     }),
