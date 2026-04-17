@@ -3,11 +3,16 @@ import Phaser from 'phaser'
 import type { AppState, LogChunk } from '../../shared/types'
 import { BayScene } from './game/BayScene'
 import { bus } from './bus'
+import { DeployModal } from './components/DeployModal'
 
 function App(): React.JSX.Element {
   const [state, setState] = useState<AppState | null>(null)
   const [logs, setLogs] = useState<LogChunk[]>([])
   const [selectedCompanionId, setSelectedCompanionId] = useState<string | null>(null)
+  const [pendingDeploy, setPendingDeploy] = useState<{
+    companionId: string
+    facilityId: string
+  } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const canvasParentRef = useRef<HTMLDivElement>(null)
@@ -41,19 +46,7 @@ function App(): React.JSX.Element {
     })
 
     const offDrop = (payload: { companionId: string; facilityId: string }): void => {
-      const prompt = window.prompt(
-        'Task prompt for Atlas-Prime:',
-        'Explore this project and summarize its structure.'
-      )
-      if (prompt) {
-        window.mechbay
-          .deployStart({
-            companionId: payload.companionId,
-            facilityId: payload.facilityId,
-            taskPrompt: prompt
-          })
-          .catch((e) => alert(`Deploy failed: ${e instanceof Error ? e.message : String(e)}`))
-      }
+      setPendingDeploy(payload)
     }
     const offSelect = (payload: { companionId: string | null }): void => {
       setSelectedCompanionId(payload.companionId)
@@ -148,6 +141,36 @@ function App(): React.JSX.Element {
         <span>⟨DRAG⟩ DEPLOY · ⟨CLICK⟩ SELECT · ⟨ESC⟩ CANCEL</span>
         <span>{new Date().toLocaleTimeString()}</span>
       </div>
+
+      {pendingDeploy && state && (() => {
+        const companion = state.companions.find((c) => c.id === pendingDeploy.companionId)
+        const facility = state.facilities.find((f) => f.id === pendingDeploy.facilityId)
+        if (!companion || !facility) {
+          // State drifted (rare) — just dismiss.
+          setPendingDeploy(null)
+          return null
+        }
+        return (
+          <DeployModal
+            companion={companion}
+            facility={facility}
+            onCancel={() => setPendingDeploy(null)}
+            onDeploy={(prompt, quickPrompt) => {
+              window.mechbay
+                .deployStart({
+                  companionId: pendingDeploy.companionId,
+                  facilityId: pendingDeploy.facilityId,
+                  taskPrompt: prompt,
+                  quickPromptUsed: quickPrompt
+                })
+                .catch((e) =>
+                  alert(`Deploy failed: ${e instanceof Error ? e.message : String(e)}`)
+                )
+              setPendingDeploy(null)
+            }}
+          />
+        )
+      })()}
     </div>
   )
 }
