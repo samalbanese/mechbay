@@ -18,7 +18,7 @@ describe('StateManager', () => {
     const sm = new StateManager(store, '/tmp/mechbay-test')
     const state = sm.getState()
 
-    expect(state.version).toBe(1)
+    expect(state.version).toBe(2)
     expect(state.companions).toHaveLength(5)
     expect(state.companions.map((c) => c.family).sort()).toEqual([
       'claude',
@@ -27,6 +27,32 @@ describe('StateManager', () => {
       'hermes',
       'kimi'
     ])
+  })
+
+  it('seeds all 6 facility types on first run', () => {
+    const store = makeInMemoryStore()
+    const sm = new StateManager(store, '/tmp/mechbay-test')
+    const state = sm.getState()
+    expect(state.facilities).toHaveLength(6)
+    expect(state.facilities.map((f) => f.facilityType).sort()).toEqual([
+      'command-center',
+      'data-archive',
+      'foundry',
+      'research-lab',
+      'salvage-dock',
+      'security-bay'
+    ])
+  })
+
+  it('re-seeds state when cached version is stale (schema migration)', () => {
+    const store = makeInMemoryStore()
+    // Pre-populate store with v1 data (no facilities) to simulate pre-migration
+    store.set('state', { version: 1, companions: [], facilities: [], deployments: [], logChunks: [], settings: {} })
+    const sm = new StateManager(store, '/tmp/mechbay-test')
+    const state = sm.getState()
+    expect(state.version).toBe(2)
+    expect(state.companions).toHaveLength(5)
+    expect(state.facilities).toHaveLength(6)
   })
 
   it('seeds canonical mech-class mapping per spec §6', () => {

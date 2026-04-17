@@ -101,8 +101,12 @@ export class BayScene extends Phaser.Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor('#0a0805')
-    // Center camera so the iso diamond lands in the middle of the canvas.
-    this.cameras.main.centerOn(0, 380)
+    // Center camera on the geometric middle of the 16×16 iso diamond.
+    // Center tile is (GRID_W/2, GRID_H/2) which iso-maps to (0, GRID_H*TILE_H/2).
+    const center = isoToScreen({ x: GRID_W / 2, y: GRID_H / 2 })
+    this.cameras.main.centerOn(center.x, center.y)
+    // Zoom out enough to show the whole bay in a ~1100×640 viewport.
+    this.cameras.main.setZoom(0.65)
     this.drawGround()
     if (this.state) this.render()
   }
