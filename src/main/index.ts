@@ -1,10 +1,11 @@
 import { app, shell, BrowserWindow } from 'electron'
-import { join } from 'path'
+import { dirname, join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import Store from 'electron-store'
 import icon from '../../resources/icon.png?asset'
 import { StateManager } from './state-manager'
 import { scaffoldSoulAndMemory } from './soul-memory'
+import { FsReader } from './fs-reader'
 import { ClaudeRunner } from './runners/claude'
 import { CodexRunner } from './runners/codex'
 import { KimiRunner } from './runners/kimi'
@@ -85,7 +86,22 @@ app.whenReady().then(() => {
     hermes: new HermesRunner()
   }
 
-  registerIpc({ win, state, runners })
+  // Filesystem reader is whitelisted to (a) every facility's project path
+  // and (b) each companion's barracks dir (so the File Browser can view
+  // soul.md / memory.md). Whitelist is rebuilt on every state change so
+  // adding/removing a facility or swapping a facility's path takes effect
+  // immediately.
+  const buildFsWhitelist = (): string[] => {
+    const s = state.getState()
+    return [
+      ...s.facilities.map((f) => f.path).filter((p) => p && p.length > 0),
+      ...s.companions.map((c) => dirname(c.soulPath))
+    ]
+  }
+  const fsReader = new FsReader(buildFsWhitelist())
+  state.on('stateChanged', () => fsReader.updateWhitelist(buildFsWhitelist()))
+
+  registerIpc({ win, state, runners, fsReader })
 
   // Crash recovery: any deployment stuck in an active status is a
   // zombie from a previous crash or force-quit. Mark them failed and

@@ -12,12 +12,16 @@ import type { Runner } from './runners/types'
 import { ulid } from '../shared/ulid'
 import { scanProjects, type DiscoveredProject } from './project-scanner'
 import { assembleSystemPrompt, appendMemoryEntry } from './soul-memory'
+import type { FsReader, FsNode } from './fs-reader'
 
 export interface IpcDeps {
   win: BrowserWindow
   state: StateManager
   runners: Record<string, Runner>
+  fsReader: FsReader
 }
+
+const FS_DIR_IGNORE = ['node_modules', '.git', 'dist', 'build', '.next', '.turbo', 'out']
 
 const ACTIVE_STATUSES: DeploymentStatus[] = [
   'walking-to',
@@ -27,7 +31,22 @@ const ACTIVE_STATUSES: DeploymentStatus[] = [
 ]
 
 export function registerIpc(opts: IpcDeps): void {
-  const { win, state } = opts
+  const { win, state, fsReader } = opts
+
+  // Filesystem: whitelist-guarded read-only access for the File Browser.
+  // Handlers simply delegate to FsReader; all security lives there.
+  ipcMain.handle(
+    IPC.FS_READ_DIR,
+    async (_e, args: { path: string }): Promise<FsNode[]> => {
+      return fsReader.readDir(args.path, { ignore: FS_DIR_IGNORE })
+    }
+  )
+  ipcMain.handle(
+    IPC.FS_READ_FILE,
+    async (_e, args: { path: string }): Promise<string> => {
+      return fsReader.readFile(args.path)
+    }
+  )
 
   // Broadcast every state change to renderer.
   state.on('stateChanged', (s) => {
