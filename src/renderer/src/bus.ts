@@ -13,6 +13,8 @@ export type BusEvents = {
   facilityClicked: { facilityId: string }
   /** Mech selected or deselected — drives the companion stats panel. */
   companionSelected: { companionId: string | null }
+  /** Click on a tile with no facility / mech on it — triggers place-building flow. */
+  emptyTileClicked: { tile: { x: number; y: number } }
 }
 
 export const bus = mitt<BusEvents>()

@@ -5,6 +5,7 @@ import type {
   AppState,
   Deployment,
   DeploymentStatus,
+  Facility,
   FsNode,
   LogChunk
 } from '../shared/types'
@@ -35,7 +36,9 @@ const mechbayApi = {
   },
   fsReadDir: (p: string): Promise<FsNode[]> => ipcRenderer.invoke(IPC.FS_READ_DIR, { path: p }),
   fsReadFile: (p: string): Promise<string> =>
-    ipcRenderer.invoke(IPC.FS_READ_FILE, { path: p })
+    ipcRenderer.invoke(IPC.FS_READ_FILE, { path: p }),
+  addFacilityFromPicker: (tile: { x: number; y: number }): Promise<Facility | null> =>
+    ipcRenderer.invoke(IPC.FACILITY_ADD_FROM_PICKER, { tile })
 }
 
 export type MechBayApi = typeof mechbayApi

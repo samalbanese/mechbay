@@ -11,6 +11,7 @@ export const IPC = {
   LOG_STREAM: 'mechbay:log:stream',
   FS_READ_DIR: 'mechbay:fs:readDir',
   FS_READ_FILE: 'mechbay:fs:readFile',
+  FACILITY_ADD_FROM_PICKER: 'mechbay:facility:addFromPicker',
   SCAN_PROJECTS: 'mechbay:scan:projects',
   CLI_RESCAN: 'mechbay:cli:rescan',
   RECOVERY_ZOMBIES: 'mechbay:recovery:zombies'

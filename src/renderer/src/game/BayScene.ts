@@ -55,6 +55,16 @@ function isoToScreen(tile: { x: number; y: number }): { x: number; y: number } {
   }
 }
 
+function screenToIso(world: { x: number; y: number }): { x: number; y: number } {
+  return {
+    x: Math.round(world.x / TILE_W + world.y / TILE_H),
+    y: Math.round(world.y / TILE_H - world.x / TILE_W)
+  }
+}
+
+/** Distance (px) a pointer must move between down + up to count as a drag. */
+const CLICK_DRAG_THRESHOLD = 8
+
 /**
  * Phaser scene for the isometric mech bay. Wave 3 loaded real sprites via
  * Vite `?url` imports; the bay is a 16×16 iso grid rendered in 3/4 projection
@@ -112,6 +122,32 @@ export class BayScene extends Phaser.Scene {
     this.generateSmokeTexture()
     this.drawGround()
     if (this.state) this.render()
+
+    // Scene-level pointerup fires for every release, including those
+    // landing on interactive sprites (mechs / facilities). We only want
+    // the empty-tile handler when: (a) no interactive object was under
+    // the pointer, and (b) the pointer barely moved (so drags don't
+    // masquerade as clicks on release).
+    this.input.on(
+      'pointerup',
+      (pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]) => {
+        if (currentlyOver.length > 0) return
+        const dragDist = Math.hypot(pointer.upX - pointer.downX, pointer.upY - pointer.downY)
+        if (dragDist > CLICK_DRAG_THRESHOLD) return
+
+        const tile = screenToIso({ x: pointer.worldX, y: pointer.worldY })
+        if (tile.x < 0 || tile.x >= GRID_W || tile.y < 0 || tile.y >= GRID_H) return
+
+        // Guard: don't fire on tiles already occupied by a facility —
+        // those are selected via their sprite's own pointerup handler,
+        // not via empty-tile click.
+        if (this.state?.facilities.some((f) => f.tile.x === tile.x && f.tile.y === tile.y)) {
+          return
+        }
+
+        bus.emit('emptyTileClicked', { tile })
+      }
+    )
   }
 
   /**

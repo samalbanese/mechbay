@@ -1,4 +1,5 @@
-import { ipcMain, BrowserWindow } from 'electron'
+import { ipcMain, BrowserWindow, dialog } from 'electron'
+import path from 'path'
 import { IPC } from '../shared/ipc-channels'
 import type {
   Companion,
@@ -13,6 +14,10 @@ import { ulid } from '../shared/ulid'
 import { scanProjects, type DiscoveredProject } from './project-scanner'
 import { assembleSystemPrompt, appendMemoryEntry } from './soul-memory'
 import type { FsReader, FsNode } from './fs-reader'
+import { facilityTypeFromName } from './facility-type-hash'
+
+const GRID_W = 16
+const GRID_H = 16
 
 export interface IpcDeps {
   win: BrowserWindow
@@ -45,6 +50,53 @@ export function registerIpc(opts: IpcDeps): void {
     IPC.FS_READ_FILE,
     async (_e, args: { path: string }): Promise<string> => {
       return fsReader.readFile(args.path)
+    }
+  )
+
+  // Manual facility placement: user clicked an empty iso tile, we show the
+  // OS directory picker, and if they choose one we add a new facility
+  // bound to that directory at the clicked tile. The hash-based type
+  // selection gives the new facility a stable sprite/archetype without
+  // needing user input. Returns the new facility, or null if the user
+  // cancelled / the tile was invalid.
+  ipcMain.handle(
+    IPC.FACILITY_ADD_FROM_PICKER,
+    async (_e, args: { tile: { x: number; y: number } }): Promise<Facility | null> => {
+      const { tile } = args
+      if (
+        !Number.isInteger(tile.x) ||
+        !Number.isInteger(tile.y) ||
+        tile.x < 0 ||
+        tile.x >= GRID_W ||
+        tile.y < 0 ||
+        tile.y >= GRID_H
+      ) {
+        throw new Error(`Invalid tile (${tile.x}, ${tile.y})`)
+      }
+      const current = state.getState()
+      if (current.facilities.some((f) => f.tile.x === tile.x && f.tile.y === tile.y)) {
+        throw new Error(`Tile (${tile.x}, ${tile.y}) is already occupied`)
+      }
+
+      const result = await dialog.showOpenDialog(win, {
+        title: 'Pick a project directory',
+        properties: ['openDirectory']
+      })
+      if (result.canceled || result.filePaths.length === 0) return null
+      const picked = result.filePaths[0]
+      const name = path.basename(picked)
+
+      const facility: Facility = {
+        id: ulid(),
+        name,
+        path: picked,
+        facilityType: facilityTypeFromName(name),
+        tile,
+        source: 'manual',
+        discoveredAt: Date.now()
+      }
+      state.updateState((prev) => ({ ...prev, facilities: [...prev.facilities, facility] }))
+      return facility
     }
   )
 

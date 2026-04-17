@@ -67,14 +67,28 @@ function App(): React.JSX.Element {
       setBrowsingFacilityId(payload.facilityId)
       setActiveTab('files')
     }
+    const offEmptyTile = (payload: { tile: { x: number; y: number } }): void => {
+      window.mechbay
+        .addFacilityFromPicker(payload.tile)
+        .then((facility) => {
+          if (facility) {
+            // Auto-open the file browser for the freshly-placed building.
+            setBrowsingFacilityId(facility.id)
+            setActiveTab('files')
+          }
+        })
+        .catch((e) => alert(`Could not place building: ${e instanceof Error ? e.message : String(e)}`))
+    }
     bus.on('dropOnFacility', offDrop)
     bus.on('companionSelected', offSelect)
     bus.on('facilityClicked', offFacility)
+    bus.on('emptyTileClicked', offEmptyTile)
 
     return () => {
       bus.off('dropOnFacility', offDrop)
       bus.off('companionSelected', offSelect)
       bus.off('facilityClicked', offFacility)
+      bus.off('emptyTileClicked', offEmptyTile)
       gameRef.current?.destroy(true)
       gameRef.current = null
       sceneRef.current = null
@@ -206,7 +220,7 @@ function App(): React.JSX.Element {
 
       {/* Bottom HUD */}
       <div style={hudBottomStyle}>
-        <span>⟨DRAG⟩ DEPLOY · ⟨CLICK⟩ SELECT · ⟨ESC⟩ CANCEL</span>
+        <span>⟨DRAG⟩ DEPLOY · ⟨CLICK MECH⟩ SELECT · ⟨CLICK FACILITY⟩ BROWSE · ⟨CLICK EMPTY TILE⟩ PLACE BUILDING</span>
         <span>{new Date().toLocaleTimeString()}</span>
       </div>
 
