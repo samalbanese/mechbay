@@ -77,6 +77,12 @@ export class BayScene extends Phaser.Scene {
   }
 
   preload(): void {
+    // Loud asset-load failures — silent fallbacks to Phaser's green __DEFAULT
+    // texture tile into a hexagon pattern and are very confusing.
+    this.load.on('loaderror', (file: Phaser.Loader.File) => {
+      console.error(`[BayScene] asset failed to load: ${file.key} → ${file.url}`)
+    })
+
     this.load.image('ground', groundTileUrl)
 
     this.load.image('mech-atlas', atlasUrl)

@@ -25,6 +25,15 @@ export default defineConfig({
         '@renderer': resolve('src/renderer/src')
       }
     },
+    // Allow Vite dev server to serve files from the repo-level assets/ dir
+    // (outside the renderer root). Without this, `?url` imports of
+    // ../../../../assets/*.png resolve at build time but 403 in dev mode,
+    // causing Phaser to fall back to its green __DEFAULT texture.
+    server: {
+      fs: {
+        allow: [resolve('.')]
+      }
+    },
     plugins: [react()]
   }
 })
