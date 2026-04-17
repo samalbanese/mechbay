@@ -16,3 +16,6 @@ mechbay/logs/
 # Vitest
 coverage/
 .vitest-cache/
+
+# Scratch (cross-family review prompts/outputs, Codex/Kimi artifacts)
+.tmp/

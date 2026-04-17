@@ -104,4 +104,31 @@ describe('ClaudeRunner.spawn', () => {
     }
     expect(await result.exit).toBe(143)
   })
+
+  it('does not hang when spawn emits error (e.g. ENOENT, no close/exit)', async () => {
+    const fakeChild = new EventEmitter() as EventEmitter & {
+      stdout: Readable
+      stderr: Readable
+      kill: ReturnType<typeof vi.fn>
+    }
+    fakeChild.stdout = Readable.from([])
+    fakeChild.stderr = Readable.from([])
+    fakeChild.kill = vi.fn()
+
+    const runner = new ClaudeRunner({
+      which: async () => '/usr/local/bin/claude',
+      spawnProcess: (() => fakeChild) as never
+    })
+
+    const result = await runner.spawn('/tmp', 'noop')
+    // Simulate Node's spawn-error emission. Critically, no 'close' or
+    // 'exit' event will follow — ENOENT/EPERM are terminal by themselves.
+    setTimeout(() => fakeChild.emit('error', new Error('spawn claude ENOENT')), 5)
+
+    const chunks: string[] = []
+    for await (const c of result.stream) chunks.push(c.text)
+
+    expect(chunks.join('')).toContain('ENOENT')
+    expect(await result.exit).toBe(-1)
+  })
 })

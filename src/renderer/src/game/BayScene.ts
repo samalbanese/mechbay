@@ -283,7 +283,12 @@ export class BayScene extends Phaser.Scene {
     smoke.setDepth(sprite.depth + 1)
     this.smokeEmitters.set(companionId, smoke)
 
-    sprite.setInteractive().once('pointerup', () => {
+    // Disable dragging while dead — otherwise the base render() handlers
+    // fire pointerup AFTER dragend and double-trigger recovery. Using
+    // pointerdown for recovery also means a stray drag attempt on a dead
+    // mech can't accidentally both snap-home AND walk-home.
+    this.input.setDraggable(sprite, false)
+    sprite.once('pointerdown', () => {
       this.clearDeadInField(companionId)
       const companion = this.state?.companions.find((c) => c.id === companionId)
       if (companion) void this.walkTo(companionId, companion.homeTile)
@@ -295,12 +300,26 @@ export class BayScene extends Phaser.Scene {
     if (sprite) {
       sprite.clearTint()
       sprite.setAlpha(1)
+      this.input.setDraggable(sprite, true)
     }
     const smoke = this.smokeEmitters.get(companionId)
     if (smoke) {
       smoke.destroy()
       this.smokeEmitters.delete(companionId)
     }
+  }
+
+  /**
+   * Phaser calls this on scene stop/restart. Particle emitters created
+   * via `this.add.particles()` are NOT auto-destroyed with the scene, so
+   * they leak GPU resources on repeat shutdowns (rare in the current
+   * Electron-single-scene app, but trivial to get right).
+   */
+  shutdown(): void {
+    for (const smoke of this.smokeEmitters.values()) {
+      smoke.destroy()
+    }
+    this.smokeEmitters.clear()
   }
 
   /**

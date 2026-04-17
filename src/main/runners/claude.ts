@@ -31,13 +31,39 @@ export class ClaudeRunner implements Runner {
 
   async spawn(cwd: string, prompt: string): Promise<SpawnResult> {
     const child = this.spawnProcess('claude', ['-p', prompt], { cwd, shell: false })
-    return {
-      stream: this.toAsyncStream(child),
-      abort: () => child.kill('SIGTERM'),
-      exit: new Promise<number>((resolve) => {
-        child.on('exit', (code) => resolve(code ?? -1))
-      })
+
+    // Abort must be idempotent — repeat calls or calls after natural exit
+    // raise ESRCH on Windows. SIGKILL fallback handles stubborn processes.
+    let aborted = false
+    const abort = (): void => {
+      // `child.exitCode == null` covers both `null` (Node's "not yet
+      // exited" value) and `undefined` (mock children in tests).
+      if (aborted || child.killed || child.exitCode != null) return
+      aborted = true
+      try {
+        child.kill('SIGTERM')
+      } catch {
+        /* already gone */
+      }
+      setTimeout(() => {
+        if (!child.killed && child.exitCode === null) {
+          try {
+            child.kill('SIGKILL')
+          } catch {
+            /* already gone */
+          }
+        }
+      }, 5000).unref()
     }
+
+    // Surface spawn errors (ENOENT, EPERM, etc.) via both the stream and
+    // the exit promise so consumers cannot hang on a missing binary.
+    const exit = new Promise<number>((resolve) => {
+      child.on('exit', (code) => resolve(code ?? -1))
+      child.on('error', () => resolve(-1))
+    })
+
+    return { stream: this.toAsyncStream(child), abort, exit }
   }
 
   private async *toAsyncStream(child: ChildProcess): AsyncIterable<RunnerChunk> {
@@ -60,6 +86,13 @@ export class ClaudeRunner implements Runner {
       wake()
     })
     child.on('close', () => {
+      done = true
+      wake()
+    })
+    // Spawn errors never emit 'close' — queue a synthetic chunk so the
+    // consumer sees the failure reason, then terminate the stream.
+    child.on('error', (err) => {
+      queue.push({ stream: 'stderr', text: `[spawn error] ${err.message}\n` })
       done = true
       wake()
     })

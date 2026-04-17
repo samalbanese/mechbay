@@ -76,8 +76,16 @@ export interface LogChunk {
   text: string
 }
 
+/**
+ * Bump this literal when the seed shape changes incompatibly. The
+ * StateManager migration wipes any cached state whose version doesn't
+ * match (TODO(Wave 5): preserve user-facing settings + deployments
+ * history across bumps once those become editable / valuable).
+ */
+export type StateSchemaVersion = 2
+
 export interface AppState {
-  version: number
+  version: StateSchemaVersion
   companions: Companion[]
   facilities: Facility[]
   deployments: Deployment[]

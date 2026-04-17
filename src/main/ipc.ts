@@ -68,8 +68,27 @@ export function registerIpc(opts: IpcDeps): void {
       }))
 
       if (status === 'walking-to') {
-        // Fire and forget — execution updates state asynchronously.
-        void executeDeployment(deploymentId, companion.family, facility.path, args.taskPrompt, opts)
+        // Fire and forget — execution updates state asynchronously. Attach
+        // a catch so sync throws (e.g. runner lookup miss) don't become
+        // unhandled rejections; they land in the deployment as 'failed'.
+        executeDeployment(
+          deploymentId,
+          companion.family,
+          facility.path,
+          args.taskPrompt,
+          opts
+        ).catch((err) => {
+          const message = err instanceof Error ? err.message : String(err)
+          console.error(`[ipc] executeDeployment(${deploymentId}) crashed:`, message)
+          state.updateState((prev) => ({
+            ...prev,
+            deployments: prev.deployments.map((d) =>
+              d.id === deploymentId
+                ? { ...d, status: 'failed', completedAt: Date.now(), summary: message }
+                : d
+            )
+          }))
+        })
       }
       return { deploymentId, status }
     }
@@ -171,13 +190,25 @@ export async function executeDeployment(
             d.id === nextQueued.id ? { ...d, status: 'walking-to' } : d
           )
         }))
-        void executeDeployment(
-          nextQueued.id,
+        const queuedId = nextQueued.id
+        executeDeployment(
+          queuedId,
           companion.family,
           facility.path,
           nextQueued.taskPrompt,
           opts
-        )
+        ).catch((err) => {
+          const message = err instanceof Error ? err.message : String(err)
+          console.error(`[ipc] queued executeDeployment(${queuedId}) crashed:`, message)
+          state.updateState((prev) => ({
+            ...prev,
+            deployments: prev.deployments.map((d) =>
+              d.id === queuedId
+                ? { ...d, status: 'failed', completedAt: Date.now(), summary: message }
+                : d
+            )
+          }))
+        })
       }
     }
   }

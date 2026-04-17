@@ -7,11 +7,12 @@ import type {
   Companion,
   Facility,
   FacilityType,
-  MechClass
+  MechClass,
+  StateSchemaVersion
 } from '../shared/types'
 import { ulid } from '../shared/ulid'
 
-const STATE_SCHEMA_VERSION = 2
+const STATE_SCHEMA_VERSION: StateSchemaVersion = 2
 
 interface MechSeed {
   family: AgentFamily
