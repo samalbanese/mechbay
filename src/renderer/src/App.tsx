@@ -42,11 +42,14 @@ function App(): React.JSX.Element {
     gameRef.current = new Phaser.Game({
       type: Phaser.AUTO,
       parent: canvasParentRef.current,
-      width: canvasParentRef.current.clientWidth || 1100,
-      height: 520,
       backgroundColor: '#0a0805',
       scene,
-      scale: { mode: Phaser.Scale.RESIZE }
+      scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+        width: 1100,
+        height: 640
+      }
     })
 
     const offDrop = (payload: { companionId: string; facilityId: string }): void => {
