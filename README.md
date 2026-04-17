@@ -30,6 +30,13 @@ command bay. Each mech has a soul and a memory.
   detects zombies and surfaces them in a red recovery modal.
 - **NOT DEPLOYABLE overlay** for mechs whose CLI isn't on your PATH,
   probed automatically at boot.
+- **Souls + memory** — each mech has a `soul.md` (persona, speaking
+  style) and a `memory.md` (history of past deployments). Both get
+  read into the system prompt on every deploy, so mechs evolve as you
+  edit their souls and accumulate history through use.
+- **Inline File Browser** — click any facility to browse its project
+  directory in the sidebar. Files are read through a whitelist-guarded
+  FsReader; `..` traversal and symlink escapes both fail closed.
 
 ## Stack
 
@@ -101,7 +108,7 @@ npm run build:win    # → electron-builder Windows NSIS installer (dist/)
 
 ## Status
 
-**MVP-complete for Waves 1-4 + Wave 6.** Specifically:
+**MVP-complete.** Waves 1-6 shipped:
 
 - ✅ Wave 1 — Plumbing (Electron scaffold, runner interface,
   ClaudeRunner, StateManager, IPC, bare UI, integration test)
@@ -111,9 +118,9 @@ npm run build:win    # → electron-builder Windows NSIS installer (dist/)
   Gemini 3 Pro, click-to-recover)
 - ✅ Wave 4 — Full cast (4 more runners, CLI probe, queue,
   Deploy Modal)
-- 🚧 Wave 5 — Souls + File Browser (soul.md/memory.md
-  scaffolding, system prompt assembly, FsReader, FileBrowser panel).
-  **Not shipped.**
+- ✅ Wave 5 — Souls + File Browser (soul.md / memory.md scaffolding,
+  system prompt assembly, whitelist-guarded FsReader, tabbed
+  sidebar File Browser)
 - ✅ Wave 6 — Polish (project scanner, crash recovery modal, smoke
   tests doc, this README, installer config)
 
