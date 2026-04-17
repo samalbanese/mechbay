@@ -4,6 +4,7 @@ import type { Deployment, DeploymentStatus, LogChunk } from '../shared/types'
 import type { StateManager } from './state-manager'
 import type { Runner } from './runners/types'
 import { ulid } from '../shared/ulid'
+import { scanProjects, type DiscoveredProject } from './project-scanner'
 
 export interface IpcDeps {
   win: BrowserWindow
@@ -29,6 +30,25 @@ export function registerIpc(opts: IpcDeps): void {
   })
 
   ipcMain.handle(IPC.STATE_GET, () => state.getState())
+
+  // Project scanner — returns a list of discovered project directories
+  // under a given root (defaults to state.settings.projectsDir). The
+  // renderer receives raw DiscoveredProject records and decides what to
+  // do with them (picker UI, facility binding, etc.). We intentionally
+  // DO NOT auto-populate facilities from scan results — how scanned
+  // projects map onto the 6 seeded archetype-facilities is a design
+  // decision the user needs to make. See docs/overnight-prep/
+  // 2026-04-17-project-scanner-facility-binding.md for the analysis.
+  ipcMain.handle(
+    IPC.SCAN_PROJECTS,
+    async (_e, rootDir?: string): Promise<DiscoveredProject[]> => {
+      const s = state.getState()
+      const root = rootDir ?? s.settings.projectsDir
+      const results = await scanProjects(root, s.settings.ignoredMarkers)
+      state.updateState((prev) => ({ ...prev, lastScanAt: Date.now() }))
+      return results
+    }
+  )
 
   ipcMain.handle(
     IPC.DEPLOY_START,
