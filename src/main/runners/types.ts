@@ -1,0 +1,30 @@
+/**
+ * Common contract every agent-family runner implements.
+ *
+ * Runners are the boundary between MechBay and the actual CLI processes.
+ * Each agent family (claude, codex, kimi, gemini, hermes) gets its own
+ * runner file under src/main/runners/<family>.ts. Adding a new family
+ * is a drop-in: implement `Runner`, register in the runner map.
+ */
+
+export interface RunnerChunk {
+  stream: 'stdout' | 'stderr'
+  text: string
+}
+
+export interface SpawnResult {
+  /** Async iterable of stdout/stderr chunks. Yields until the child exits. */
+  stream: AsyncIterable<RunnerChunk>
+  /** Send SIGTERM. Caller is responsible for fallback to SIGKILL after grace. */
+  abort: () => void
+  /** Resolves with the child's exit code (or -1 if killed by signal). */
+  exit: Promise<number>
+}
+
+export interface Runner {
+  /** Check whether the underlying CLI is available on PATH. */
+  isAvailable(): Promise<boolean>
+
+  /** Spawn the CLI with the given cwd + prompt. Returns streams + lifecycle. */
+  spawn(cwd: string, prompt: string): Promise<SpawnResult>
+}
