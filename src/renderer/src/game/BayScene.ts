@@ -65,6 +65,7 @@ export class BayScene extends Phaser.Scene {
   private mechSprites = new Map<string, Phaser.GameObjects.Image>()
   private facilitySprites = new Map<string, Phaser.GameObjects.Image>()
   private smokeEmitters = new Map<string, Phaser.GameObjects.Particles.ParticleEmitter>()
+  private unavailableLabels = new Map<string, Phaser.GameObjects.Text>()
 
   constructor() {
     super('BayScene')
@@ -173,6 +174,37 @@ export class BayScene extends Phaser.Scene {
       this.mechSprites.set(companion.id, sprite)
     }
 
+    // Sync NOT DEPLOYABLE overlay with current cliAvailable flag. This
+    // re-runs on every setState so the boot CLI check (which updates
+    // state async) can flip a mech from unavailable → available without
+    // a full scene reload.
+    for (const companion of this.state.companions) {
+      const sprite = this.mechSprites.get(companion.id)
+      if (!sprite) continue
+      const hasLabel = this.unavailableLabels.has(companion.id)
+
+      if (!companion.cliAvailable && !hasLabel) {
+        sprite.setAlpha(0.45)
+        const s = isoToScreen(companion.homeTile)
+        const label = this.add
+          .text(s.x, s.y + MECH_DISPLAY_SIZE * 0.25, '⚠ NOT DEPLOYABLE', {
+            fontSize: '10px',
+            color: '#ff4444',
+            fontFamily: 'Courier New',
+            fontStyle: 'bold',
+            stroke: '#000',
+            strokeThickness: 3
+          })
+          .setOrigin(0.5)
+          .setDepth(sprite.depth + 1)
+        this.unavailableLabels.set(companion.id, label)
+      } else if (companion.cliAvailable && hasLabel) {
+        sprite.setAlpha(1)
+        this.unavailableLabels.get(companion.id)?.destroy()
+        this.unavailableLabels.delete(companion.id)
+      }
+    }
+
     for (const facility of this.state.facilities) {
       if (this.facilitySprites.has(facility.id)) continue
       const s = isoToScreen(facility.tile)
@@ -203,6 +235,8 @@ export class BayScene extends Phaser.Scene {
       if (!this.state.companions.some((c) => c.id === id)) {
         sprite.destroy()
         this.mechSprites.delete(id)
+        this.unavailableLabels.get(id)?.destroy()
+        this.unavailableLabels.delete(id)
       }
     }
     for (const [id, sprite] of this.facilitySprites) {
@@ -320,6 +354,10 @@ export class BayScene extends Phaser.Scene {
       smoke.destroy()
     }
     this.smokeEmitters.clear()
+    for (const label of this.unavailableLabels.values()) {
+      label.destroy()
+    }
+    this.unavailableLabels.clear()
   }
 
   /**

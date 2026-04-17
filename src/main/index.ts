@@ -10,6 +10,7 @@ import { KimiRunner } from './runners/kimi'
 import { GeminiRunner } from './runners/gemini'
 import { HermesRunner } from './runners/hermes'
 import { registerIpc } from './ipc'
+import { runCliAvailabilityCheck } from './cli-check'
 import type { Runner } from './runners/types'
 import type { AgentFamily } from '../shared/types'
 
@@ -68,6 +69,13 @@ app.whenReady().then(() => {
   }
 
   registerIpc({ win, state, runners })
+
+  // Probe CLI availability in the background — don't block window show.
+  // A missing CLI surfaces as a NOT DEPLOYABLE overlay once the state
+  // update lands (usually within a second of boot).
+  void runCliAvailabilityCheck(state, runners).catch((err) => {
+    console.error('[boot] runCliAvailabilityCheck failed:', err)
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
