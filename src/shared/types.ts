@@ -18,6 +18,14 @@ export type FacilityType =
   | 'salvage-dock'
   | 'data-archive'
 
+/** Filesystem tree node returned by FS_READ_DIR — consumed by FileBrowser. */
+export interface FsNode {
+  name: string
+  path: string
+  type: 'file' | 'directory'
+  size?: number
+}
+
 export type DeploymentStatus =
   | 'queued'
   | 'walking-to'

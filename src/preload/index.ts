@@ -1,7 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { IPC } from '../shared/ipc-channels'
-import type { AppState, Deployment, LogChunk, DeploymentStatus } from '../shared/types'
+import type {
+  AppState,
+  Deployment,
+  DeploymentStatus,
+  FsNode,
+  LogChunk
+} from '../shared/types'
 
 const mechbayApi = {
   getState: (): Promise<AppState> => ipcRenderer.invoke(IPC.STATE_GET),
@@ -26,7 +32,10 @@ const mechbayApi = {
     const handler = (_e: Electron.IpcRendererEvent, zombies: Deployment[]): void => cb(zombies)
     ipcRenderer.on(IPC.RECOVERY_ZOMBIES, handler)
     return () => ipcRenderer.off(IPC.RECOVERY_ZOMBIES, handler)
-  }
+  },
+  fsReadDir: (p: string): Promise<FsNode[]> => ipcRenderer.invoke(IPC.FS_READ_DIR, { path: p }),
+  fsReadFile: (p: string): Promise<string> =>
+    ipcRenderer.invoke(IPC.FS_READ_FILE, { path: p })
 }
 
 export type MechBayApi = typeof mechbayApi

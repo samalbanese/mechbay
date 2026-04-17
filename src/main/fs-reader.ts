@@ -1,13 +1,9 @@
 import fs from 'fs/promises'
 import fsSync from 'fs'
 import path from 'path'
+import type { FsNode } from '../shared/types'
 
-export interface FsNode {
-  name: string
-  path: string
-  type: 'file' | 'directory'
-  size?: number
-}
+export type { FsNode }
 
 export interface ReadDirOptions {
   ignore?: string[]

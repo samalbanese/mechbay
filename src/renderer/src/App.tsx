@@ -5,6 +5,9 @@ import { BayScene } from './game/BayScene'
 import { bus } from './bus'
 import { DeployModal } from './components/DeployModal'
 import { CrashRecoveryModal } from './components/CrashRecoveryModal'
+import { FileBrowser } from './components/FileBrowser'
+
+type SidebarTab = 'log' | 'files'
 
 function App(): React.JSX.Element {
   const [state, setState] = useState<AppState | null>(null)
@@ -15,6 +18,8 @@ function App(): React.JSX.Element {
     facilityId: string
   } | null>(null)
   const [recoveryZombies, setRecoveryZombies] = useState<Deployment[] | null>(null)
+  const [browsingFacilityId, setBrowsingFacilityId] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<SidebarTab>('log')
   const [error, setError] = useState<string | null>(null)
 
   const canvasParentRef = useRef<HTMLDivElement>(null)
@@ -58,12 +63,18 @@ function App(): React.JSX.Element {
     const offSelect = (payload: { companionId: string | null }): void => {
       setSelectedCompanionId(payload.companionId)
     }
+    const offFacility = (payload: { facilityId: string }): void => {
+      setBrowsingFacilityId(payload.facilityId)
+      setActiveTab('files')
+    }
     bus.on('dropOnFacility', offDrop)
     bus.on('companionSelected', offSelect)
+    bus.on('facilityClicked', offFacility)
 
     return () => {
       bus.off('dropOnFacility', offDrop)
       bus.off('companionSelected', offSelect)
+      bus.off('facilityClicked', offFacility)
       gameRef.current?.destroy(true)
       gameRef.current = null
       sceneRef.current = null
@@ -130,15 +141,65 @@ function App(): React.JSX.Element {
             </div>
           )}
 
-          <div style={{ ...sidebarPanelStyle, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ color: '#ffcc33', fontSize: 11, letterSpacing: '0.15em', marginBottom: 6 }}>
-              LIVE LOG
+          <div
+            style={{
+              ...sidebarPanelStyle,
+              flex: 1,
+              minHeight: 0,
+              display: 'flex',
+              flexDirection: 'column'
+            }}
+          >
+            <div style={tabRowStyle}>
+              <button
+                type="button"
+                style={activeTab === 'log' ? tabActiveStyle : tabStyle}
+                onClick={() => setActiveTab('log')}
+              >
+                LIVE LOG
+              </button>
+              {browsingFacilityId && (
+                <>
+                  <button
+                    type="button"
+                    style={activeTab === 'files' ? tabActiveStyle : tabStyle}
+                    onClick={() => setActiveTab('files')}
+                  >
+                    FILES
+                  </button>
+                  <button
+                    type="button"
+                    style={tabCloseStyle}
+                    onClick={() => {
+                      setBrowsingFacilityId(null)
+                      setActiveTab('log')
+                    }}
+                    title="Close file browser"
+                  >
+                    ×
+                  </button>
+                </>
+              )}
             </div>
-            <pre style={logPaneStyle}>
-              {logs.length === 0
-                ? '(drag a mech onto a facility to deploy)'
-                : logs.map((l) => `[${l.stream}] ${l.text}`).join('')}
-            </pre>
+
+            {activeTab === 'log' && (
+              <pre style={logPaneStyle}>
+                {logs.length === 0
+                  ? '(drag a mech onto a facility to deploy · click a facility to browse its files)'
+                  : logs.map((l) => `[${l.stream}] ${l.text}`).join('')}
+              </pre>
+            )}
+
+            {activeTab === 'files' && browsingFacilityId && state && (() => {
+              const facility = state.facilities.find((f) => f.id === browsingFacilityId)
+              if (!facility) return <div style={{ color: '#888' }}>Facility not found.</div>
+              return (
+                <FileBrowser
+                  facilityPath={facility.path}
+                  facilityName={facility.name}
+                />
+              )
+            })()}
           </div>
         </div>
       </div>
@@ -274,6 +335,44 @@ const logPaneStyle: React.CSSProperties = {
   whiteSpace: 'pre-wrap',
   margin: 0,
   minHeight: 0
+}
+
+const tabRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 2,
+  marginBottom: 8,
+  borderBottom: '1px solid #2a2520'
+}
+
+const tabStyle: React.CSSProperties = {
+  background: 'transparent',
+  border: 0,
+  borderBottom: '2px solid transparent',
+  color: '#666',
+  fontSize: 10,
+  letterSpacing: '0.15em',
+  padding: '4px 10px',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  fontWeight: 'bold'
+}
+
+const tabActiveStyle: React.CSSProperties = {
+  ...tabStyle,
+  color: '#ffcc33',
+  borderBottom: '2px solid #ffcc33'
+}
+
+const tabCloseStyle: React.CSSProperties = {
+  marginLeft: 'auto',
+  background: 'transparent',
+  border: 0,
+  color: '#666',
+  fontSize: 14,
+  padding: '2px 8px',
+  cursor: 'pointer',
+  fontFamily: 'inherit'
 }
 
 export default App
