@@ -4,6 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import Store from 'electron-store'
 import icon from '../../resources/icon.png?asset'
 import { StateManager } from './state-manager'
+import { scaffoldSoulAndMemory } from './soul-memory'
 import { ClaudeRunner } from './runners/claude'
 import { CodexRunner } from './runners/codex'
 import { KimiRunner } from './runners/kimi'
@@ -60,6 +61,21 @@ app.whenReady().then(() => {
   // ─── MechBay subsystems ───────────────────────────────────────
   const store = new Store({ name: 'mechbay-state' })
   const state = new StateManager(store, app.getPath('userData'))
+
+  // Scaffold soul.md + memory.md for every companion on boot. Idempotent:
+  // only writes templates if the files don't exist. A companion's
+  // personality is persistent from this point on — edits to soul.md carry
+  // forward, and memory.md accretes on every deploy.
+  for (const companion of state.getState().companions) {
+    try {
+      scaffoldSoulAndMemory(companion.mechClass, companion.name, {
+        soulPath: companion.soulPath,
+        memoryPath: companion.memoryPath
+      })
+    } catch (err) {
+      console.error(`[boot] scaffoldSoulAndMemory(${companion.name}) failed:`, err)
+    }
+  }
 
   const runners: Record<AgentFamily, Runner> = {
     claude: new ClaudeRunner(),

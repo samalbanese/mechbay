@@ -1,10 +1,17 @@
 import { ipcMain, BrowserWindow } from 'electron'
 import { IPC } from '../shared/ipc-channels'
-import type { Deployment, DeploymentStatus, LogChunk } from '../shared/types'
+import type {
+  Companion,
+  Deployment,
+  DeploymentStatus,
+  Facility,
+  LogChunk
+} from '../shared/types'
 import type { StateManager } from './state-manager'
 import type { Runner } from './runners/types'
 import { ulid } from '../shared/ulid'
 import { scanProjects, type DiscoveredProject } from './project-scanner'
+import { assembleSystemPrompt, appendMemoryEntry } from './soul-memory'
 
 export interface IpcDeps {
   win: BrowserWindow
@@ -91,13 +98,7 @@ export function registerIpc(opts: IpcDeps): void {
         // Fire and forget — execution updates state asynchronously. Attach
         // a catch so sync throws (e.g. runner lookup miss) don't become
         // unhandled rejections; they land in the deployment as 'failed'.
-        executeDeployment(
-          deploymentId,
-          companion.family,
-          facility.path,
-          args.taskPrompt,
-          opts
-        ).catch((err) => {
+        executeDeployment(deploymentId, companion, facility, args.taskPrompt, opts).catch((err) => {
           const message = err instanceof Error ? err.message : String(err)
           console.error(`[ipc] executeDeployment(${deploymentId}) crashed:`, message)
           state.updateState((prev) => ({
@@ -117,13 +118,13 @@ export function registerIpc(opts: IpcDeps): void {
 
 export async function executeDeployment(
   deploymentId: string,
-  family: string,
-  cwd: string,
-  prompt: string,
+  companion: Companion,
+  facility: Facility,
+  taskPrompt: string,
   opts: IpcDeps
 ): Promise<void> {
   const { win, state, runners } = opts
-  const runner = runners[family]
+  const runner = runners[companion.family]
   if (!runner) {
     state.updateState((prev) => ({
       ...prev,
@@ -133,7 +134,7 @@ export async function executeDeployment(
               ...d,
               status: 'failed',
               completedAt: Date.now(),
-              summary: `No runner registered for family: ${family}`
+              summary: `No runner registered for family: ${companion.family}`
             }
           : d
       )
@@ -151,7 +152,16 @@ export async function executeDeployment(
 
   let exitCode: number
   try {
-    const result = await runner.spawn(cwd, prompt)
+    // Wrap the task prompt in the companion's soul + memory so every
+    // deploy carries personality context + past-run history. If assembly
+    // throws (missing files — shouldn't happen after boot scaffolding but
+    // belt-and-suspenders), the outer catch below records it as failed.
+    const fullPrompt = assembleSystemPrompt(
+      companion.name,
+      { soulPath: companion.soulPath, memoryPath: companion.memoryPath },
+      taskPrompt
+    )
+    const result = await runner.spawn(facility.path, fullPrompt)
     // Drain stream BEFORE awaiting exit — exit may resolve while chunks
     // are still queued. Sequential await guarantees all chunks reach renderer.
     for await (const chunk of result.stream) {
@@ -181,6 +191,7 @@ export async function executeDeployment(
           : d
       )
     }))
+    recordMemory(companion, facility, taskPrompt, `Failed before exit. ${message}`)
     return
   }
 
@@ -193,6 +204,13 @@ export async function executeDeployment(
         : d
     )
   }))
+
+  recordMemory(
+    companion,
+    facility,
+    taskPrompt,
+    exitCode === 0 ? `Success. Exit 0.` : `Failed. Exit ${exitCode}.`
+  )
 
   // Auto-advance the next queued deployment if a slot opened.
   // (Wave 4 Task 4.3 expands this; minimal version included here.)
@@ -211,25 +229,44 @@ export async function executeDeployment(
           )
         }))
         const queuedId = nextQueued.id
-        executeDeployment(
-          queuedId,
-          companion.family,
-          facility.path,
-          nextQueued.taskPrompt,
-          opts
-        ).catch((err) => {
-          const message = err instanceof Error ? err.message : String(err)
-          console.error(`[ipc] queued executeDeployment(${queuedId}) crashed:`, message)
-          state.updateState((prev) => ({
-            ...prev,
-            deployments: prev.deployments.map((d) =>
-              d.id === queuedId
-                ? { ...d, status: 'failed', completedAt: Date.now(), summary: message }
-                : d
-            )
-          }))
-        })
+        executeDeployment(queuedId, companion, facility, nextQueued.taskPrompt, opts).catch(
+          (err) => {
+            const message = err instanceof Error ? err.message : String(err)
+            console.error(`[ipc] queued executeDeployment(${queuedId}) crashed:`, message)
+            state.updateState((prev) => ({
+              ...prev,
+              deployments: prev.deployments.map((d) =>
+                d.id === queuedId
+                  ? { ...d, status: 'failed', completedAt: Date.now(), summary: message }
+                  : d
+              )
+            }))
+          }
+        )
       }
     }
+  }
+}
+
+/**
+ * Append a deploy outcome to the companion's memory.md. Swallows errors
+ * (logs only) — a memory-append failure should NEVER break an otherwise
+ * successful deploy, so disk issues or path races are best-effort.
+ */
+function recordMemory(
+  companion: Companion,
+  facility: Facility,
+  task: string,
+  outcome: string
+): void {
+  try {
+    appendMemoryEntry(companion.memoryPath, {
+      timestamp: new Date(),
+      facility: facility.name,
+      task,
+      outcome
+    })
+  } catch (err) {
+    console.error(`[ipc] appendMemoryEntry(${companion.name}) failed:`, err)
   }
 }
