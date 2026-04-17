@@ -5,8 +5,13 @@ import Store from 'electron-store'
 import icon from '../../resources/icon.png?asset'
 import { StateManager } from './state-manager'
 import { ClaudeRunner } from './runners/claude'
+import { CodexRunner } from './runners/codex'
+import { KimiRunner } from './runners/kimi'
+import { GeminiRunner } from './runners/gemini'
+import { HermesRunner } from './runners/hermes'
 import { registerIpc } from './ipc'
 import type { Runner } from './runners/types'
+import type { AgentFamily } from '../shared/types'
 
 function createWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
@@ -54,9 +59,12 @@ app.whenReady().then(() => {
   const store = new Store({ name: 'mechbay-state' })
   const state = new StateManager(store, app.getPath('userData'))
 
-  const runners: Record<string, Runner> = {
-    claude: new ClaudeRunner()
-    // codex, kimi, gemini, hermes — added in Wave 4
+  const runners: Record<AgentFamily, Runner> = {
+    claude: new ClaudeRunner(),
+    codex: new CodexRunner(),
+    kimi: new KimiRunner(),
+    gemini: new GeminiRunner(),
+    hermes: new HermesRunner()
   }
 
   registerIpc({ win, state, runners })
