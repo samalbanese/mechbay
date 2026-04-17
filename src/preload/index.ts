@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { IPC } from '../shared/ipc-channels'
-import type { AppState, LogChunk, DeploymentStatus } from '../shared/types'
+import type { AppState, Deployment, LogChunk, DeploymentStatus } from '../shared/types'
 
 const mechbayApi = {
   getState: (): Promise<AppState> => ipcRenderer.invoke(IPC.STATE_GET),
@@ -21,7 +21,12 @@ const mechbayApi = {
     taskPrompt: string
     quickPromptUsed?: string
   }): Promise<{ deploymentId: string; status: DeploymentStatus }> =>
-    ipcRenderer.invoke(IPC.DEPLOY_START, args)
+    ipcRenderer.invoke(IPC.DEPLOY_START, args),
+  onRecoveryZombies: (cb: (zombies: Deployment[]) => void): (() => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, zombies: Deployment[]): void => cb(zombies)
+    ipcRenderer.on(IPC.RECOVERY_ZOMBIES, handler)
+    return () => ipcRenderer.off(IPC.RECOVERY_ZOMBIES, handler)
+  }
 }
 
 export type MechBayApi = typeof mechbayApi

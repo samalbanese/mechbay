@@ -108,6 +108,57 @@ describe('StateManager', () => {
     expect(calls).toBe(2)
   })
 
+  it('sweepZombieDeployments marks in-flight deployments failed and returns them', () => {
+    const store = makeInMemoryStore()
+    const sm = new StateManager(store, '/tmp/zombie-test')
+    sm.updateState((s) => ({
+      ...s,
+      deployments: [
+        {
+          id: 'z1',
+          companionId: 'c1',
+          facilityId: 'f1',
+          taskPrompt: 'do a thing',
+          status: 'working',
+          startedAt: 1
+        },
+        {
+          id: 'z2',
+          companionId: 'c2',
+          facilityId: 'f2',
+          taskPrompt: 'walk back',
+          status: 'returning',
+          startedAt: 2
+        },
+        {
+          id: 'done1',
+          companionId: 'c3',
+          facilityId: 'f3',
+          taskPrompt: 'already done',
+          status: 'completed',
+          startedAt: 3
+        }
+      ]
+    }))
+
+    const zombies = sm.sweepZombieDeployments()
+    expect(zombies).toHaveLength(2)
+    expect(zombies.every((z) => z.status === 'failed')).toBe(true)
+    expect(zombies.every((z) => z.summary === 'Interrupted by app crash')).toBe(true)
+
+    const stored = sm.getState().deployments
+    expect(stored.find((d) => d.id === 'z1')!.status).toBe('failed')
+    expect(stored.find((d) => d.id === 'z2')!.status).toBe('failed')
+    expect(stored.find((d) => d.id === 'done1')!.status).toBe('completed')
+  })
+
+  it('sweepZombieDeployments is a no-op when no active deployments exist', () => {
+    const store = makeInMemoryStore()
+    const sm = new StateManager(store, '/tmp/zombie-noop-test')
+    // Default seed has no deployments
+    expect(sm.sweepZombieDeployments()).toEqual([])
+  })
+
   it('preserves existing state on second instantiation (no re-seed)', () => {
     const store = makeInMemoryStore()
     const sm = new StateManager(store, '/tmp/mechbay-test')

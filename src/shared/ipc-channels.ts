@@ -12,7 +12,8 @@ export const IPC = {
   FS_READ_DIR: 'mechbay:fs:readDir',
   FS_READ_FILE: 'mechbay:fs:readFile',
   SCAN_PROJECTS: 'mechbay:scan:projects',
-  CLI_RESCAN: 'mechbay:cli:rescan'
+  CLI_RESCAN: 'mechbay:cli:rescan',
+  RECOVERY_ZOMBIES: 'mechbay:recovery:zombies'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]

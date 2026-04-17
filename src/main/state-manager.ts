@@ -5,6 +5,8 @@ import type {
   AgentFamily,
   AppState,
   Companion,
+  Deployment,
+  DeploymentStatus,
   Facility,
   FacilityType,
   MechClass,
@@ -129,5 +131,45 @@ export class StateManager extends EventEmitter {
     this.store.set('state', this.cache)
     this.emit('stateChanged', this.cache)
     return this.cache
+  }
+
+  /**
+   * Find deployments stuck in an active status (walking-to, working,
+   * awaiting-input, returning) from the previous run — these are
+   * zombies from a crash or force-quit. Mark each `failed` with a
+   * clear summary and return the affected records so the renderer
+   * can surface a recovery notice.
+   *
+   * Idempotent: calling on a freshly-seeded or already-swept state
+   * returns an empty array and leaves state untouched.
+   */
+  sweepZombieDeployments(): Deployment[] {
+    const ACTIVE: DeploymentStatus[] = ['walking-to', 'working', 'awaiting-input', 'returning']
+    const zombies = this.cache.deployments.filter((d) => ACTIVE.includes(d.status))
+    if (zombies.length === 0) return []
+
+    const zombieIds = new Set(zombies.map((z) => z.id))
+    const now = Date.now()
+    this.updateState((prev) => ({
+      ...prev,
+      deployments: prev.deployments.map((d) =>
+        zombieIds.has(d.id)
+          ? {
+              ...d,
+              status: 'failed' as DeploymentStatus,
+              summary: 'Interrupted by app crash',
+              completedAt: now
+            }
+          : d
+      )
+    }))
+    // Return the MUTATED records (with status=failed) so the modal
+    // shows consistent info.
+    return zombies.map((z) => ({
+      ...z,
+      status: 'failed' as DeploymentStatus,
+      summary: 'Interrupted by app crash',
+      completedAt: now
+    }))
   }
 }

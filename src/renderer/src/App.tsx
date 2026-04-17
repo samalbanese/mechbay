@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import Phaser from 'phaser'
-import type { AppState, LogChunk } from '../../shared/types'
+import type { AppState, Deployment, LogChunk } from '../../shared/types'
 import { BayScene } from './game/BayScene'
 import { bus } from './bus'
 import { DeployModal } from './components/DeployModal'
+import { CrashRecoveryModal } from './components/CrashRecoveryModal'
 
 function App(): React.JSX.Element {
   const [state, setState] = useState<AppState | null>(null)
@@ -13,6 +14,7 @@ function App(): React.JSX.Element {
     companionId: string
     facilityId: string
   } | null>(null)
+  const [recoveryZombies, setRecoveryZombies] = useState<Deployment[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const canvasParentRef = useRef<HTMLDivElement>(null)
@@ -24,9 +26,11 @@ function App(): React.JSX.Element {
     window.mechbay.getState().then(setState).catch((e) => setError(String(e)))
     const offState = window.mechbay.onStateChange(setState)
     const offLog = window.mechbay.onLogChunk((c) => setLogs((prev) => [...prev.slice(-499), c]))
+    const offRecovery = window.mechbay.onRecoveryZombies((zombies) => setRecoveryZombies(zombies))
     return () => {
       offState()
       offLog()
+      offRecovery()
     }
   }, [])
 
@@ -141,6 +145,13 @@ function App(): React.JSX.Element {
         <span>⟨DRAG⟩ DEPLOY · ⟨CLICK⟩ SELECT · ⟨ESC⟩ CANCEL</span>
         <span>{new Date().toLocaleTimeString()}</span>
       </div>
+
+      {recoveryZombies && recoveryZombies.length > 0 && (
+        <CrashRecoveryModal
+          zombies={recoveryZombies}
+          onDismiss={() => setRecoveryZombies(null)}
+        />
+      )}
 
       {pendingDeploy && state && (() => {
         const companion = state.companions.find((c) => c.id === pendingDeploy.companionId)

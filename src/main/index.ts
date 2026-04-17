@@ -11,6 +11,7 @@ import { GeminiRunner } from './runners/gemini'
 import { HermesRunner } from './runners/hermes'
 import { registerIpc } from './ipc'
 import { runCliAvailabilityCheck } from './cli-check'
+import { IPC } from '../shared/ipc-channels'
 import type { Runner } from './runners/types'
 import type { AgentFamily } from '../shared/types'
 
@@ -69,6 +70,25 @@ app.whenReady().then(() => {
   }
 
   registerIpc({ win, state, runners })
+
+  // Crash recovery: any deployment stuck in an active status is a
+  // zombie from a previous crash or force-quit. Mark them failed and
+  // send the list to the renderer once it's ready to receive it.
+  const zombies = state.sweepZombieDeployments()
+  if (zombies.length > 0) {
+    const push = (): void => {
+      if (!win.isDestroyed()) {
+        win.webContents.send(IPC.RECOVERY_ZOMBIES, zombies)
+      }
+    }
+    // If the page is already loaded when we hit this code path, send
+    // immediately; otherwise wait for did-finish-load.
+    if (win.webContents.isLoading()) {
+      win.webContents.once('did-finish-load', push)
+    } else {
+      push()
+    }
+  }
 
   // Probe CLI availability in the background — don't block window show.
   // A missing CLI surfaces as a NOT DEPLOYABLE overlay once the state
