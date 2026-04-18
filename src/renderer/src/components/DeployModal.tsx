@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import type { Companion, Facility } from '../../../shared/types'
+import { filterPromptsFor, type QuickPrompt } from '../quickPrompts'
 
 /**
  * Modal overlay that collects a task prompt before firing a deploy.
@@ -7,111 +8,291 @@ import type { Companion, Facility } from '../../../shared/types'
  * form — textarea + quick-prompt chips + Deploy/Cancel actions.
  *
  * Keyboard: ESC cancels. Click on the dimmed backdrop cancels.
+ * Ctrl/Cmd+Enter submits when textarea is focused.
  * Disabled state: if the companion's CLI isn't available, Deploy is
  * locked and a banner explains why.
+ *
+ * Focus trap: Tab cycles within modal. Focus restored on close.
  */
 
-interface QuickPrompt {
-  label: string
-  text: string
-}
-
-const QUICK_PROMPTS: QuickPrompt[] = [
-  {
-    label: 'Explore',
-    text: 'Explore this project and summarize its structure, purpose, and recent state.'
-  },
-  {
-    label: 'Review recent changes',
-    text: 'Review the most recent git changes and flag any concerns or bugs.'
-  },
-  {
-    label: 'Fix failing tests',
-    text: 'Find and fix any currently failing tests. Report what you changed and why.'
-  },
-  {
-    label: 'Add feature',
-    text: 'Add a new feature: '
-  }
-]
-
-export function DeployModal(props: {
+interface DeployModalProps {
   companion: Companion
   facility: Facility
   onDeploy: (prompt: string, quickPrompt?: string) => void
   onCancel: () => void
-}): React.JSX.Element {
-  const [text, setText] = useState('')
-  const [quickUsed, setQuickUsed] = useState<string | undefined>()
-  const canDeploy = props.companion.cliAvailable && text.trim().length > 0
+  isLoading?: boolean
+}
 
+export function DeployModal(props: DeployModalProps): React.JSX.Element {
+  const { companion, facility, onDeploy, onCancel, isLoading = false } = props
+
+  const [text, setText] = useState('')
+  const [activePromptId, setActivePromptId] = useState<string | null>(null)
+  const [hoveredChip, setHoveredChip] = useState<string | null>(null)
+  const [isHoveredDeploy, setIsHoveredDeploy] = useState(false)
+
+  const modalRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const cancelButtonRef = useRef<HTMLButtonElement>(null)
+  const deployButtonRef = useRef<HTMLButtonElement>(null)
+  const lastFocusedRef = useRef<HTMLElement | null>(null)
+
+  // Filter prompts for this mech/facility combo
+  const availablePrompts = filterPromptsFor(companion.mechClass, facility.facilityType)
+
+  // Determine deploy button state
+  const hasText = text.trim().length > 0
+  const cliAvailable = companion.cliAvailable
+  const canDeploy = cliAvailable && hasText && !isLoading
+
+  // Save focus on mount, restore on unmount
+  useEffect(() => {
+    lastFocusedRef.current = document.activeElement as HTMLElement
+    // Focus the textarea on open
+    textareaRef.current?.focus()
+
+    return () => {
+      lastFocusedRef.current?.focus()
+    }
+  }, [])
+
+  // Keyboard handlers: ESC to cancel, Ctrl/Cmd+Enter to submit
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') props.onCancel()
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onCancel()
+        return
+      }
+
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault()
+        if (canDeploy) {
+          handleDeploy()
+        }
+      }
     }
+
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [props])
+  }, [onCancel, canDeploy, text, activePromptId])
+
+  // Focus trap: keep tab cycling within modal
+  useEffect(() => {
+    const modal = modalRef.current
+    if (!modal) return
+
+    const focusableElements = modal.querySelectorAll<HTMLElement>(
+      'button, textarea, [href], input, select, [tabindex]:not([tabindex="-1"])'
+    )
+    const firstElement = focusableElements[0]
+    const lastElement = focusableElements[focusableElements.length - 1]
+
+    const handleTabKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Tab') return
+
+      if (e.shiftKey) {
+        if (document.activeElement === firstElement) {
+          e.preventDefault()
+          lastElement?.focus()
+        }
+      } else {
+        if (document.activeElement === lastElement) {
+          e.preventDefault()
+          firstElement?.focus()
+        }
+      }
+    }
+
+    modal.addEventListener('keydown', handleTabKey)
+    return () => modal.removeEventListener('keydown', handleTabKey)
+  }, [])
+
+  const handleDeploy = useCallback(() => {
+    if (!canDeploy) return
+    const quickPromptLabel = activePromptId
+      ? availablePrompts.find((p) => p.id === activePromptId)?.label
+      : undefined
+    onDeploy(text.trim(), quickPromptLabel)
+  }, [canDeploy, text, activePromptId, availablePrompts, onDeploy])
+
+  const handleChipClick = useCallback(
+    (prompt: QuickPrompt) => {
+      if (prompt.id === 'custom') {
+        // Custom: clear selection, let user type
+        setActivePromptId('custom')
+        textareaRef.current?.focus()
+      } else {
+        // Regular prompt: populate textarea
+        setText(prompt.prompt)
+        setActivePromptId(prompt.id)
+        textareaRef.current?.focus()
+      }
+    },
+    [setText, setActivePromptId]
+  )
+
+  const handleClearText = useCallback(() => {
+    setText('')
+    setActivePromptId(null)
+    textareaRef.current?.focus()
+  }, [setText, setActivePromptId])
+
+  const getDeployButtonState = (): {
+    style: React.CSSProperties
+    text: string
+    title: string
+  } => {
+    if (isLoading) {
+      return {
+        style: deployButtonLoadingStyle,
+        text: 'DEPLOYING...',
+        title: 'Deployment in progress'
+      }
+    }
+    if (!cliAvailable) {
+      return {
+        style: deployButtonDisabledStyle,
+        text: '⚠ DEPLOY',
+        title: `${companion.family.toUpperCase()} CLI not available — install and restart to deploy`
+      }
+    }
+    if (!hasText) {
+      return {
+        style: deployButtonDisabledStyle,
+        text: '⚠ DEPLOY',
+        title: 'Enter a task prompt to deploy'
+      }
+    }
+    if (isHoveredDeploy) {
+      return {
+        style: deployButtonHoverStyle,
+        text: '⚙ DEPLOY',
+        title: 'Ctrl+Enter to deploy'
+      }
+    }
+    return {
+      style: deployButtonIdleStyle,
+      text: '⚙ DEPLOY',
+      title: 'Ctrl+Enter to deploy'
+    }
+  }
+
+  const deployState = getDeployButtonState()
 
   return (
     <div
       style={backdropStyle}
       onClick={(e) => {
-        if (e.target === e.currentTarget) props.onCancel()
+        if (e.target === e.currentTarget) onCancel()
       }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="deploy-modal-title"
     >
-      <div style={panelStyle}>
-        <div style={headerStyle}>
-          DEPLOY: {props.companion.name.toUpperCase()} → {props.facility.name.toUpperCase()}
-        </div>
-        <div style={subheaderStyle}>
-          {props.companion.mechClass.toUpperCase()} · {props.companion.family}
+      <div ref={modalRef} style={panelStyle}>
+        {/* Header */}
+        <div style={headerRowStyle}>
+          <div>
+            <div id="deploy-modal-title" style={headerStyle}>
+              DEPLOY: {companion.name.toUpperCase()} → {facility.name.toUpperCase()}
+            </div>
+            <div style={subheaderStyle}>
+              {companion.mechClass.toUpperCase()} · {companion.family} · {facility.facilityType}
+            </div>
+          </div>
+          {activePromptId && activePromptId !== 'custom' && (
+            <button
+              type="button"
+              onClick={handleClearText}
+              style={resetButtonStyle}
+              title="Clear prompt and reset"
+              aria-label="Clear prompt"
+            >
+              ⌫ RESET
+            </button>
+          )}
         </div>
 
-        {!props.companion.cliAvailable && (
-          <div style={bannerStyle}>
-            ⚠ {props.companion.family.toUpperCase()} CLI NOT DETECTED · install and restart to deploy
+        {/* CLI unavailable banner */}
+        {!cliAvailable && (
+          <div style={bannerStyle} role="alert">
+            <span style={bannerIconStyle}>⚠</span>
+            <span>
+              {companion.family.toUpperCase()} CLI NOT DETECTED · install and restart to deploy
+            </span>
           </div>
         )}
 
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Task prompt..."
-          autoFocus
-          style={textareaStyle}
-        />
-
-        <div style={{ marginTop: 12, marginBottom: 16 }}>
+        {/* Quick prompt chips */}
+        <div style={chipsSectionStyle}>
           <div style={chipLabelStyle}>QUICK PROMPTS</div>
           <div style={chipRowStyle}>
-            {QUICK_PROMPTS.map((p) => (
-              <button
-                key={p.label}
-                type="button"
-                onClick={() => {
-                  setText(p.text)
-                  setQuickUsed(p.label)
-                }}
-                style={chipStyle}
-              >
-                {p.label}
-              </button>
-            ))}
+            {availablePrompts.map((prompt) => {
+              const isActive = activePromptId === prompt.id
+              const isHovered = hoveredChip === prompt.id
+              return (
+                <button
+                  key={prompt.id}
+                  type="button"
+                  onClick={() => handleChipClick(prompt)}
+                  onMouseEnter={() => setHoveredChip(prompt.id)}
+                  onMouseLeave={() => setHoveredChip(null)}
+                  style={getChipStyle(isActive, isHovered)}
+                  aria-pressed={isActive}
+                  aria-label={`${prompt.label} quick prompt`}
+                >
+                  {prompt.icon && <span style={chipIconStyle}>{prompt.icon}</span>}
+                  {prompt.label}
+                </button>
+              )
+            })}
           </div>
         </div>
 
+        {/* Textarea */}
+        <div style={textareaSectionStyle}>
+          <textarea
+            ref={textareaRef}
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value)
+              // If user types, they're going custom
+              if (activePromptId && activePromptId !== 'custom') {
+                setActivePromptId('custom')
+              }
+            }}
+            placeholder="Describe the task for this deployment... (Ctrl+Enter to deploy)"
+            disabled={isLoading}
+            style={textareaStyle}
+            aria-label="Task prompt"
+          />
+        </div>
+
+        {/* Action buttons */}
         <div style={actionRowStyle}>
-          <button type="button" onClick={props.onCancel} style={cancelButtonStyle}>
+          <button
+            ref={cancelButtonRef}
+            type="button"
+            onClick={onCancel}
+            disabled={isLoading}
+            style={isLoading ? cancelButtonDisabledStyle : cancelButtonStyle}
+            aria-label="Cancel deployment"
+          >
             CANCEL
           </button>
           <button
+            ref={deployButtonRef}
             type="button"
-            onClick={() => props.onDeploy(text.trim(), quickUsed)}
+            onClick={handleDeploy}
             disabled={!canDeploy}
-            style={{ ...deployButtonStyle, ...(canDeploy ? {} : deployButtonDisabledStyle) }}
+            onMouseEnter={() => setIsHoveredDeploy(true)}
+            onMouseLeave={() => setIsHoveredDeploy(false)}
+            style={deployState.style}
+            title={deployState.title}
+            aria-label={deployState.title}
           >
-            ⚙ DEPLOY
+            {deployState.text}
           </button>
         </div>
       </div>
@@ -119,10 +300,25 @@ export function DeployModal(props: {
   )
 }
 
+// --- Styles ---
+
+const ORANGE = '#e85f00'
+const ORANGE_BRIGHT = '#ff6b1a'
+const AMBER = '#ffcc33'
+const DARK_BG = '#0a0805'
+const PANEL_BG = '#1a1510'
+const BORDER_COLOR = '#2a2520'
+const TEXT_MUTED = '#888'
+const TEXT_DIM = '#666'
+const RED = '#ff6b6b'
+const RED_DARK = '#c44'
+
 const backdropStyle: React.CSSProperties = {
   position: 'fixed',
   inset: 0,
-  background: 'rgba(0, 0, 0, 0.75)',
+  background: 'rgba(0, 0, 0, 0.7)',
+  backdropFilter: 'blur(4px)',
+  WebkitBackdropFilter: 'blur(4px)',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -130,109 +326,209 @@ const backdropStyle: React.CSSProperties = {
 }
 
 const panelStyle: React.CSSProperties = {
-  background: '#1a1510',
-  border: '2px solid #e85f00',
-  boxShadow: '0 0 24px rgba(232, 95, 0, 0.3)',
+  background: PANEL_BG,
+  border: `2px solid ${ORANGE}`,
+  boxShadow: `0 0 32px rgba(232, 95, 0, 0.35), 0 4px 24px rgba(0, 0, 0, 0.5)`,
   padding: 24,
-  minWidth: 520,
-  maxWidth: 640,
-  color: '#e85f00',
+  minWidth: 560,
+  maxWidth: 680,
+  color: ORANGE,
   fontFamily: '"Courier New", monospace'
+}
+
+const headerRowStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'flex-start',
+  marginBottom: 12
 }
 
 const headerStyle: React.CSSProperties = {
   fontSize: 14,
-  letterSpacing: '0.1em',
+  letterSpacing: '0.12em',
   fontWeight: 'bold',
-  marginBottom: 2
+  marginBottom: 4
 }
 
 const subheaderStyle: React.CSSProperties = {
   fontSize: 11,
-  color: '#888',
+  color: TEXT_MUTED,
+  letterSpacing: '0.1em'
+}
+
+const resetButtonStyle: React.CSSProperties = {
+  background: 'transparent',
+  border: `1px solid ${TEXT_DIM}`,
+  color: TEXT_DIM,
+  padding: '4px 10px',
+  fontSize: 10,
   letterSpacing: '0.1em',
-  marginBottom: 16
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  transition: 'all 0.15s ease'
 }
 
 const bannerStyle: React.CSSProperties = {
   background: '#2a1510',
-  border: '1px solid #c44',
-  color: '#ff6b6b',
-  padding: '8px 12px',
+  border: `1px solid ${RED_DARK}`,
+  color: RED,
+  padding: '10px 14px',
   fontSize: 11,
-  letterSpacing: '0.05em',
-  marginBottom: 12
+  letterSpacing: '0.08em',
+  marginBottom: 16,
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  borderRadius: 2
 }
 
-const textareaStyle: React.CSSProperties = {
-  width: '100%',
-  minHeight: 100,
-  background: '#0a0805',
-  color: '#eee',
-  border: '1px solid #2a2520',
-  borderLeft: '2px solid #e85f00',
-  padding: 10,
-  fontFamily: 'inherit',
-  fontSize: 13,
-  resize: 'vertical',
-  boxSizing: 'border-box'
+const bannerIconStyle: React.CSSProperties = {
+  fontSize: 14
+}
+
+const chipsSectionStyle: React.CSSProperties = {
+  marginBottom: 16
 }
 
 const chipLabelStyle: React.CSSProperties = {
-  color: '#ffcc33',
+  color: AMBER,
   fontSize: 10,
-  letterSpacing: '0.15em',
-  marginBottom: 6
+  letterSpacing: '0.18em',
+  marginBottom: 8,
+  fontWeight: 'bold'
 }
 
 const chipRowStyle: React.CSSProperties = {
   display: 'flex',
   flexWrap: 'wrap',
-  gap: 6
+  gap: 8
 }
 
-const chipStyle: React.CSSProperties = {
-  background: '#2a2520',
-  color: '#ffcc33',
-  border: '1px solid #ffcc33',
-  padding: '6px 12px',
-  fontSize: 11,
-  letterSpacing: '0.05em',
-  cursor: 'pointer',
-  fontFamily: 'inherit'
+const chipIconStyle: React.CSSProperties = {
+  marginRight: 4,
+  fontSize: 12
 }
+
+function getChipStyle(isActive: boolean, isHovered: boolean): React.CSSProperties {
+  const base: React.CSSProperties = {
+    background: isActive ? AMBER : '#2a2520',
+    color: isActive ? '#000' : AMBER,
+    border: `1px solid ${AMBER}`,
+    padding: '7px 14px',
+    fontSize: 11,
+    letterSpacing: '0.06em',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    fontWeight: isActive ? 'bold' : 'normal',
+    borderRadius: 16,
+    transition: 'all 0.15s ease',
+    display: 'flex',
+    alignItems: 'center',
+    boxShadow: isActive ? `0 0 8px rgba(255, 204, 51, 0.3)` : 'none'
+  }
+
+  if (isHovered && !isActive) {
+    return {
+      ...base,
+      background: '#3a3520',
+      boxShadow: `0 0 12px rgba(255, 204, 51, 0.2)`
+    }
+  }
+
+  return base
+}
+
+const textareaSectionStyle: React.CSSProperties = {
+  marginBottom: 20
+}
+
+const textareaStyle: React.CSSProperties = {
+  width: '100%',
+  minHeight: 120,
+  background: DARK_BG,
+  color: '#eee',
+  border: `1px solid ${BORDER_COLOR}`,
+  borderLeft: `3px solid ${ORANGE}`,
+  padding: 12,
+  fontFamily: '"Courier New", monospace',
+  fontSize: 13,
+  lineHeight: 1.5,
+  resize: 'vertical',
+  boxSizing: 'border-box',
+  outline: 'none',
+  transition: 'border-color 0.2s ease, box-shadow 0.2s ease'
+}
+
+// Focus styles applied via CSS-in-JS pattern with data attribute or class would be ideal,
+// but for inline styles we rely on :focus-within on parent or use standard focus.
+// We'll add a focus ring effect by using onFocus/onBlur if needed, but standard browser
+// focus outline will apply. Let's enhance with a custom focus style via a wrapper approach.
 
 const actionRowStyle: React.CSSProperties = {
   display: 'flex',
   justifyContent: 'flex-end',
-  gap: 10
+  gap: 12
 }
 
 const cancelButtonStyle: React.CSSProperties = {
   background: 'transparent',
-  color: '#aaa',
-  border: '1px solid #555',
-  padding: '8px 20px',
+  color: TEXT_MUTED,
+  border: `1px solid ${TEXT_DIM}`,
+  padding: '10px 24px',
   fontSize: 12,
-  letterSpacing: '0.1em',
+  letterSpacing: '0.12em',
   cursor: 'pointer',
-  fontFamily: 'inherit'
+  fontFamily: 'inherit',
+  fontWeight: 'bold',
+  transition: 'all 0.15s ease',
+  borderRadius: 2
 }
 
-const deployButtonStyle: React.CSSProperties = {
-  background: '#e85f00',
-  color: '#000',
-  border: 0,
-  padding: '8px 20px',
+const cancelButtonDisabledStyle: React.CSSProperties = {
+  ...cancelButtonStyle,
+  color: TEXT_DIM,
+  borderColor: '#3a3530',
+  cursor: 'not-allowed',
+  opacity: 0.6
+}
+
+const deployButtonBaseStyle: React.CSSProperties = {
+  padding: '10px 28px',
   fontSize: 12,
   fontWeight: 'bold',
-  letterSpacing: '0.1em',
+  letterSpacing: '0.12em',
   cursor: 'pointer',
-  fontFamily: 'inherit'
+  fontFamily: 'inherit',
+  border: 'none',
+  borderRadius: 2,
+  transition: 'all 0.15s ease'
+}
+
+const deployButtonIdleStyle: React.CSSProperties = {
+  ...deployButtonBaseStyle,
+  background: ORANGE,
+  color: '#000',
+  boxShadow: `0 0 16px rgba(232, 95, 0, 0.4)`
+}
+
+const deployButtonHoverStyle: React.CSSProperties = {
+  ...deployButtonBaseStyle,
+  background: ORANGE_BRIGHT,
+  color: '#000',
+  boxShadow: `0 0 24px rgba(255, 107, 26, 0.5)`
 }
 
 const deployButtonDisabledStyle: React.CSSProperties = {
+  ...deployButtonBaseStyle,
   background: '#3a2a1a',
-  color: '#666',
+  color: '#555',
   cursor: 'not-allowed'
+}
+
+const deployButtonLoadingStyle: React.CSSProperties = {
+  ...deployButtonBaseStyle,
+  background: '#2a2015',
+  color: ORANGE,
+  cursor: 'wait',
+  border: `1px solid ${ORANGE}`
 }
