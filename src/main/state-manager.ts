@@ -105,6 +105,21 @@ export interface StoreLike {
   has: (k: string) => boolean
 }
 
+function isValidState(obj: unknown): obj is AppState {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    'version' in obj &&
+    (obj as AppState).version === STATE_SCHEMA_VERSION &&
+    Array.isArray((obj as AppState).companions) &&
+    Array.isArray((obj as AppState).facilities) &&
+    Array.isArray((obj as AppState).deployments) &&
+    Array.isArray((obj as AppState).logChunks) &&
+    typeof (obj as AppState).settings === 'object' &&
+    (obj as AppState).settings !== null
+  )
+}
+
 export class StateManager extends EventEmitter {
   private store: StoreLike
   private cache: AppState
@@ -112,14 +127,47 @@ export class StateManager extends EventEmitter {
   constructor(store: StoreLike, userDataDir: string = os.homedir()) {
     super()
     this.store = store
-    const existing = store.has('state') ? (store.get('state') as AppState | undefined) : undefined
+
+    let existing: AppState | undefined
+    let hasExisting = false
+
+    try {
+      hasExisting = store.has('state')
+      if (hasExisting) {
+        const raw = store.get('state')
+        if (isValidState(raw)) {
+          existing = raw
+        }
+      }
+    } catch (err) {
+      console.error('[state-manager] Store read failed:', err)
+      hasExisting = false
+      existing = undefined
+    }
+
     // Reset state whenever the schema version bumps. Seed data (companion home
     // tiles, facility roster) is treated as part of the schema until players
     // can edit it in-app.
-    if (!existing || existing.version !== STATE_SCHEMA_VERSION) {
-      store.set('state', defaultState(userDataDir))
+    if (!existing) {
+      try {
+        store.set('state', defaultState(userDataDir))
+      } catch (err) {
+        console.error('[state-manager] Store write failed:', err)
+      }
     }
-    this.cache = store.get('state') as AppState
+
+    // Try to read from store, fall back to defaults if that fails
+    try {
+      const raw = store.get('state')
+      if (isValidState(raw)) {
+        this.cache = raw
+      } else {
+        this.cache = defaultState(userDataDir)
+      }
+    } catch (err) {
+      console.error('[state-manager] Store read failed during init:', err)
+      this.cache = defaultState(userDataDir)
+    }
   }
 
   getState(): AppState {
@@ -128,8 +176,13 @@ export class StateManager extends EventEmitter {
 
   updateState(updater: (s: AppState) => AppState): AppState {
     this.cache = updater(this.cache)
-    this.store.set('state', this.cache)
     this.emit('stateChanged', this.cache)
+    try {
+      this.store.set('state', this.cache)
+    } catch (err) {
+      console.error('[state-manager] Store write failed:', err)
+      this.emit('statePersistFailed', this.cache, err)
+    }
     return this.cache
   }
 

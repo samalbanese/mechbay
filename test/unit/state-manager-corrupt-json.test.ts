@@ -2,11 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { StateManager, type StoreLike } from '../../src/main/state-manager'
 
 describe('StateManager — corrupt/malformed state handling', () => {
-  // BUG: StateManager does not validate or sanitize store data.
-  // These tests document the current behavior (pass-through) vs expected behavior.
-  // See docs/smoke-results/worker-4-findings.md for details.
-
-  it.todo('falls back to defaults when stored state is corrupt JSON', () => {
+  it('falls back to defaults when stored state is corrupt JSON', () => {
     // Store returns a string that isn't valid JSON (simulating corruption)
     const corruptStore: StoreLike = {
       has: () => true,
@@ -14,8 +10,6 @@ describe('StateManager — corrupt/malformed state handling', () => {
       set: vi.fn()
     }
 
-    // CURRENT BEHAVIOR: StateManager passes corrupt data through, resulting in undefined
-    // EXPECTED: Should detect non-object return and re-seed with defaults
     const sm = new StateManager(corruptStore, '/tmp/mechbay-test')
     const state = sm.getState()
 
@@ -27,15 +21,13 @@ describe('StateManager — corrupt/malformed state handling', () => {
     expect(state.settings.concurrencyCap).toBe(3)
   })
 
-  it.todo('falls back to defaults when stored state is null', () => {
+  it('falls back to defaults when stored state is null', () => {
     const nullStore: StoreLike = {
       has: () => true,
       get: () => null,
       set: vi.fn()
     }
 
-    // CURRENT BEHAVIOR: Throws "Cannot read properties of null (reading 'version')"
-    // EXPECTED: Should detect null and re-seed with defaults
     const sm = new StateManager(nullStore, '/tmp/mechbay-test')
     const state = sm.getState()
 
@@ -43,15 +35,13 @@ describe('StateManager — corrupt/malformed state handling', () => {
     expect(state.companions).toHaveLength(5)
   })
 
-  it.todo('falls back to defaults when stored state is not an object', () => {
+  it('falls back to defaults when stored state is not an object', () => {
     const primitiveStore: StoreLike = {
       has: () => true,
       get: () => 42, // number instead of object
       set: vi.fn()
     }
 
-    // CURRENT BEHAVIOR: Passes through, resulting in undefined fields
-    // EXPECTED: Should detect primitive and re-seed with defaults
     const sm = new StateManager(primitiveStore, '/tmp/mechbay-test')
     const state = sm.getState()
 
@@ -59,7 +49,7 @@ describe('StateManager — corrupt/malformed state handling', () => {
     expect(Array.isArray(state.companions)).toBe(true)
   })
 
-  it.todo('re-seeds when stored state has missing required fields', () => {
+  it('re-seeds when stored state has missing required fields', () => {
     // State that passes basic validation but lacks required fields
     const incompleteStore: StoreLike = {
       has: () => true,
@@ -67,8 +57,6 @@ describe('StateManager — corrupt/malformed state handling', () => {
       set: vi.fn()
     }
 
-    // CURRENT BEHAVIOR: Passes through incomplete state
-    // EXPECTED: Should validate required fields and re-seed if missing
     const sm = new StateManager(incompleteStore, '/tmp/mechbay-test')
     const state = sm.getState()
 
@@ -78,7 +66,7 @@ describe('StateManager — corrupt/malformed state handling', () => {
     expect(state.settings).toBeDefined()
   })
 
-  it.todo('handles store.get throwing an exception', () => {
+  it('handles store.get throwing an exception', () => {
     const throwingStore: StoreLike = {
       has: () => true,
       get: () => {
@@ -87,8 +75,6 @@ describe('StateManager — corrupt/malformed state handling', () => {
       set: vi.fn()
     }
 
-    // CURRENT BEHAVIOR: Exception propagates and crashes constructor
-    // EXPECTED: Should catch exception and fall back to defaults
     const sm = new StateManager(throwingStore, '/tmp/mechbay-test')
     const state = sm.getState()
 
@@ -96,7 +82,7 @@ describe('StateManager — corrupt/malformed state handling', () => {
     expect(state.companions).toHaveLength(5)
   })
 
-  it.todo('handles store.has throwing an exception', () => {
+  it('handles store.has throwing an exception', () => {
     const throwingHasStore: StoreLike = {
       has: () => {
         throw new Error('has() failed')
@@ -105,8 +91,6 @@ describe('StateManager — corrupt/malformed state handling', () => {
       set: vi.fn()
     }
 
-    // CURRENT BEHAVIOR: Exception propagates and crashes constructor
-    // EXPECTED: Should catch exception and treat as "no existing state"
     const sm = new StateManager(throwingHasStore, '/tmp/mechbay-test')
     const state = sm.getState()
 
@@ -116,7 +100,7 @@ describe('StateManager — corrupt/malformed state handling', () => {
 })
 
 describe('StateManager — store write failures', () => {
-  it('updateState propagates even when store.set throws', () => {
+  it('updateState does not throw when store.set throws', () => {
     const data: Record<string, unknown> = { state: { version: 2, companions: [], facilities: [], deployments: [], logChunks: [], settings: { concurrencyCap: 3, ignoredMarkers: [], projectsDir: '/tmp', companionNameOverrides: {} } } }
     const throwingSetStore: StoreLike = {
       has: () => true,
@@ -128,17 +112,13 @@ describe('StateManager — store write failures', () => {
 
     const sm = new StateManager(throwingSetStore, '/tmp/mechbay-test')
     
-    // updateState should still update the in-memory cache even if persistence fails
+    // updateState should NOT throw even if persistence fails (it catches and logs)
     expect(() => {
       sm.updateState((s) => ({ ...s, lastScanAt: 1234 }))
-    }).toThrow('disk full')
+    }).not.toThrow()
   })
 
-  it.todo('emits stateChanged even when store.set throws', () => {
-    // BUG: When store.set throws, the exception propagates before stateChanged is emitted.
-    // The event emission and persistence should be decoupled (emit first, then persist).
-    // See docs/smoke-results/worker-4-findings.md
-    
+  it('emits stateChanged even when store.set throws', () => {
     const data: Record<string, unknown> = { state: { version: 2, companions: [], facilities: [], deployments: [], logChunks: [], settings: { concurrencyCap: 3, ignoredMarkers: [], projectsDir: '/tmp', companionNameOverrides: {} } } }
     let emitted = false
     
@@ -155,14 +135,37 @@ describe('StateManager — store write failures', () => {
       emitted = true
     })
 
-    try {
-      sm.updateState((s) => ({ ...s, lastScanAt: 5678 }))
-    } catch {
-      // expected to throw
+    // Should not throw - the error is caught internally
+    sm.updateState((s) => ({ ...s, lastScanAt: 5678 }))
+
+    // Event should have been emitted before the persistence attempt
+    expect(emitted).toBe(true)
+  })
+
+  it('emits statePersistFailed when store.set throws', () => {
+    const data: Record<string, unknown> = { state: { version: 2, companions: [], facilities: [], deployments: [], logChunks: [], settings: { concurrencyCap: 3, ignoredMarkers: [], projectsDir: '/tmp', companionNameOverrides: {} } } }
+    let persistFailedEmitted = false
+    let capturedErr: unknown
+    
+    const throwingSetStore: StoreLike = {
+      has: () => true,
+      get: (k: string) => data[k],
+      set: () => {
+        throw new Error('disk full')
+      }
     }
 
-    // Event should have been emitted before the throw
-    expect(emitted).toBe(true)
+    const sm = new StateManager(throwingSetStore, '/tmp/mechbay-test')
+    sm.on('statePersistFailed', (_state, err) => {
+      persistFailedEmitted = true
+      capturedErr = err
+    })
+
+    sm.updateState((s) => ({ ...s, lastScanAt: 9999 }))
+
+    expect(persistFailedEmitted).toBe(true)
+    expect(capturedErr).toBeInstanceOf(Error)
+    expect((capturedErr as Error).message).toBe('disk full')
   })
 })
 

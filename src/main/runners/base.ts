@@ -91,8 +91,18 @@ export abstract class CliRunner implements Runner {
       queue.push({ stream: 'stdout', text: d.toString() })
       wake()
     })
+    child.stdout?.on('error', (err) => {
+      queue.push({ stream: 'stderr', text: `[stream error] ${err.message}\n` })
+      done = true
+      wake()
+    })
     child.stderr?.on('data', (d) => {
       queue.push({ stream: 'stderr', text: d.toString() })
+      wake()
+    })
+    child.stderr?.on('error', (err) => {
+      queue.push({ stream: 'stderr', text: `[stream error] ${err.message}\n` })
+      done = true
       wake()
     })
     child.on('close', () => {
