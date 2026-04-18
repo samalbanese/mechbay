@@ -6,13 +6,21 @@ import type {
   Deployment,
   DeploymentStatus,
   Facility,
-  LogChunk
+  LogChunk,
+  SoulReadPayload,
+  SoulReadResult,
+  SoulWritePayload,
+  SoulWriteResult,
+  MemoryReadPayload,
+  MemoryReadResult,
+  BulkImportRunPayload,
+  BulkImportRunResult
 } from '../shared/types'
 import type { StateManager } from './state-manager'
 import type { Runner } from './runners/types'
 import { ulid } from '../shared/ulid'
 import { scanProjects, type DiscoveredProject } from './project-scanner'
-import { assembleSystemPrompt, appendMemoryEntry } from './soul-memory'
+import { assembleSystemPrompt, appendMemoryEntry, readSoul, writeSoul, readMemory } from './soul-memory'
 import type { FsReader, FsNode } from './fs-reader'
 import { facilityTypeFromName } from './facility-type-hash'
 
@@ -183,6 +191,77 @@ export function registerIpc(opts: IpcDeps): void {
         })
       }
       return { deploymentId, status }
+    }
+  )
+
+  // Soul/Memory read/write handlers for Journal tab
+  ipcMain.handle(
+    IPC.SOUL_READ,
+    async (_e, payload: SoulReadPayload): Promise<SoulReadResult> => {
+      return readSoul(payload.companionId)
+    }
+  )
+
+  ipcMain.handle(
+    IPC.SOUL_WRITE,
+    async (_e, payload: SoulWritePayload): Promise<SoulWriteResult> => {
+      return writeSoul(payload.companionId, payload.content)
+    }
+  )
+
+  ipcMain.handle(
+    IPC.MEMORY_READ,
+    async (_e, payload: MemoryReadPayload): Promise<MemoryReadResult> => {
+      return readMemory(payload.companionId)
+    }
+  )
+
+  // Bulk Import handler — places multiple facilities at empty tiles
+  ipcMain.handle(
+    IPC.BULK_IMPORT_RUN,
+    async (_e, payload: BulkImportRunPayload): Promise<BulkImportRunResult> => {
+      const s = state.getState()
+      const importedFacilities: Facility[] = []
+
+      for (const projectPath of payload.selectedPaths) {
+        // Find an empty tile
+        const occupied = new Set(s.facilities.map((f) => `${f.tile.x},${f.tile.y}`))
+        let emptyTile: { x: number; y: number } | null = null
+        for (let y = 0; y < GRID_H && !emptyTile; y++) {
+          for (let x = 0; x < GRID_W && !emptyTile; x++) {
+            if (!occupied.has(`${x},${y}`)) {
+              emptyTile = { x, y }
+            }
+          }
+        }
+        if (!emptyTile) {
+          return { ok: false, error: 'No empty tiles available for bulk import' }
+        }
+
+        const name = path.basename(projectPath)
+        const facility: Facility = {
+          id: ulid(),
+          name,
+          path: projectPath,
+          facilityType: facilityTypeFromName(name),
+          tile: emptyTile,
+          source: 'auto-scan',
+          discoveredAt: Date.now()
+        }
+        importedFacilities.push(facility)
+        // Update occupied set for next iteration
+        occupied.add(`${emptyTile.x},${emptyTile.y}`)
+      }
+
+      // Batch update state with all new facilities
+      if (importedFacilities.length > 0) {
+        state.updateState((prev) => ({
+          ...prev,
+          facilities: [...prev.facilities, ...importedFacilities]
+        }))
+      }
+
+      return { ok: true, imported: importedFacilities.length, facilities: importedFacilities }
     }
   )
 }
