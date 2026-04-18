@@ -61,7 +61,7 @@ CLIs on your PATH:
 
 - **Claude Code** (`claude`) — Anthropic's coding agent CLI
 - **Codex** (`codex`) — OpenAI GPT-5.4-Codex via `codex exec`
-- **Kimi** (`kimi`) — Moonshot Kimi via the native CLI's `--print` mode
+- **Kimi** (`kimi`) — Moonshot Kimi via the native CLI's `--print -p <prompt>`
 - **Gemini** (`gemini`) — Google Gemini with `-p <prompt> -o text -y`
 - Hermes is wired as a stub — integration deferred
 

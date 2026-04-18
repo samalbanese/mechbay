@@ -43,7 +43,10 @@ const CASES: Case[] = [
     label: 'kimi',
     Runner: KimiRunner as never,
     expectedCommand: 'kimi',
-    expectedArgs: (p) => ['--print', p]
+    // `--print` = non-interactive mode; `-p` binds the prompt VALUE.
+    // They are not redundant — dropping `-p` causes modern Kimi to
+    // parse the prompt as a subcommand name ("No such command ...").
+    expectedArgs: (p) => ['--print', '-p', p]
   },
   {
     label: 'gemini',
