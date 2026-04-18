@@ -266,11 +266,7 @@ describe('ClaudeRunner — non-zero exit codes', () => {
 })
 
 describe('ClaudeRunner — stream error handling', () => {
-  it.todo('handles stdout error during stream', async () => {
-    // BUG: The toAsyncStream generator doesn't handle 'error' events on stdout stream.
-    // The error is emitted but not caught, causing an unhandled exception.
-    // See docs/smoke-results/worker-4-findings.md
-    
+  it('handles stdout error during stream', async () => {
     const fakeChild = new EventEmitter() as EventEmitter & {
       stdout: Readable
       stderr: Readable
