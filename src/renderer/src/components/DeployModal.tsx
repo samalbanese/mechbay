@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { Companion, Facility } from '../../../shared/types'
 import { filterPromptsFor, type QuickPrompt } from '../quickPrompts'
+import { colors } from '../theme'
 
 /**
  * Modal overlay that collects a task prompt before firing a deploy.
@@ -78,18 +79,20 @@ export function DeployModal(props: DeployModalProps): React.JSX.Element {
   }, [onCancel, canDeploy, text, activePromptId])
 
   // Focus trap: keep tab cycling within modal
+  // Recomputes focusable elements on each Tab/Shift-Tab to handle dynamic content
   useEffect(() => {
     const modal = modalRef.current
     if (!modal) return
 
-    const focusableElements = modal.querySelectorAll<HTMLElement>(
-      'button, textarea, [href], input, select, [tabindex]:not([tabindex="-1"])'
-    )
-    const firstElement = focusableElements[0]
-    const lastElement = focusableElements[focusableElements.length - 1]
-
     const handleTabKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Tab') return
+
+      // Recompute focusable elements on each keypress for dynamic content
+      const focusableElements = modal.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), textarea:not([disabled]), [href]:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+      const firstElement = focusableElements[0]
+      const lastElement = focusableElements[focusableElements.length - 1]
 
       if (e.shiftKey) {
         if (document.activeElement === firstElement) {
@@ -184,6 +187,7 @@ export function DeployModal(props: DeployModalProps): React.JSX.Element {
     <div
       style={backdropStyle}
       onClick={(e) => {
+        if (isLoading) return
         if (e.target === e.currentTarget) onCancel()
       }}
       role="dialog"
@@ -301,17 +305,7 @@ export function DeployModal(props: DeployModalProps): React.JSX.Element {
 }
 
 // --- Styles ---
-
-const ORANGE = '#e85f00'
-const ORANGE_BRIGHT = '#ff6b1a'
-const AMBER = '#ffcc33'
-const DARK_BG = '#0a0805'
-const PANEL_BG = '#1a1510'
-const BORDER_COLOR = '#2a2520'
-const TEXT_MUTED = '#888'
-const TEXT_DIM = '#666'
-const RED = '#ff6b6b'
-const RED_DARK = '#c44'
+// All colors now imported from theme.ts — single source of truth
 
 const backdropStyle: React.CSSProperties = {
   position: 'fixed',
@@ -326,13 +320,13 @@ const backdropStyle: React.CSSProperties = {
 }
 
 const panelStyle: React.CSSProperties = {
-  background: PANEL_BG,
-  border: `2px solid ${ORANGE}`,
-  boxShadow: `0 0 32px rgba(232, 95, 0, 0.35), 0 4px 24px rgba(0, 0, 0, 0.5)`,
+  background: colors.bgHud,
+  border: `2px solid ${colors.orange}`,
+  boxShadow: `0 0 32px ${colors.orangeGlow}, 0 4px 24px rgba(0, 0, 0, 0.5)`,
   padding: 24,
   minWidth: 560,
   maxWidth: 680,
-  color: ORANGE,
+  color: colors.orange,
   fontFamily: '"Courier New", monospace'
 }
 
@@ -352,14 +346,14 @@ const headerStyle: React.CSSProperties = {
 
 const subheaderStyle: React.CSSProperties = {
   fontSize: 11,
-  color: TEXT_MUTED,
+  color: colors.textSecondary,
   letterSpacing: '0.1em'
 }
 
 const resetButtonStyle: React.CSSProperties = {
   background: 'transparent',
-  border: `1px solid ${TEXT_DIM}`,
-  color: TEXT_DIM,
+  border: `1px solid ${colors.textDim}`,
+  color: colors.textDim,
   padding: '4px 10px',
   fontSize: 10,
   letterSpacing: '0.1em',
@@ -370,8 +364,8 @@ const resetButtonStyle: React.CSSProperties = {
 
 const bannerStyle: React.CSSProperties = {
   background: '#2a1510',
-  border: `1px solid ${RED_DARK}`,
-  color: RED,
+  border: `1px solid ${colors.statusFailedDark}`,
+  color: colors.statusFailedLight,
   padding: '10px 14px',
   fontSize: 11,
   letterSpacing: '0.08em',
@@ -391,7 +385,7 @@ const chipsSectionStyle: React.CSSProperties = {
 }
 
 const chipLabelStyle: React.CSSProperties = {
-  color: AMBER,
+  color: colors.amber,
   fontSize: 10,
   letterSpacing: '0.18em',
   marginBottom: 8,
@@ -411,9 +405,9 @@ const chipIconStyle: React.CSSProperties = {
 
 function getChipStyle(isActive: boolean, isHovered: boolean): React.CSSProperties {
   const base: React.CSSProperties = {
-    background: isActive ? AMBER : '#2a2520',
-    color: isActive ? '#000' : AMBER,
-    border: `1px solid ${AMBER}`,
+    background: isActive ? colors.amber : colors.borderHud,
+    color: isActive ? '#000' : colors.amber,
+    border: `1px solid ${colors.amber}`,
     padding: '7px 14px',
     fontSize: 11,
     letterSpacing: '0.06em',
@@ -424,14 +418,14 @@ function getChipStyle(isActive: boolean, isHovered: boolean): React.CSSPropertie
     transition: 'all 0.15s ease',
     display: 'flex',
     alignItems: 'center',
-    boxShadow: isActive ? `0 0 8px rgba(255, 204, 51, 0.3)` : 'none'
+    boxShadow: isActive ? `0 0 8px ${colors.amberGlow}` : 'none'
   }
 
   if (isHovered && !isActive) {
     return {
       ...base,
       background: '#3a3520',
-      boxShadow: `0 0 12px rgba(255, 204, 51, 0.2)`
+      boxShadow: `0 0 12px ${colors.amberGlow}`
     }
   }
 
@@ -445,10 +439,10 @@ const textareaSectionStyle: React.CSSProperties = {
 const textareaStyle: React.CSSProperties = {
   width: '100%',
   minHeight: 120,
-  background: DARK_BG,
-  color: '#eee',
-  border: `1px solid ${BORDER_COLOR}`,
-  borderLeft: `3px solid ${ORANGE}`,
+  background: colors.bgPanelDark,
+  color: colors.textPrimary,
+  border: `1px solid ${colors.borderHud}`,
+  borderLeft: `3px solid ${colors.orange}`,
   padding: 12,
   fontFamily: '"Courier New", monospace',
   fontSize: 13,
@@ -472,8 +466,8 @@ const actionRowStyle: React.CSSProperties = {
 
 const cancelButtonStyle: React.CSSProperties = {
   background: 'transparent',
-  color: TEXT_MUTED,
-  border: `1px solid ${TEXT_DIM}`,
+  color: colors.textSecondary,
+  border: `1px solid ${colors.textDim}`,
   padding: '10px 24px',
   fontSize: 12,
   letterSpacing: '0.12em',
@@ -486,7 +480,7 @@ const cancelButtonStyle: React.CSSProperties = {
 
 const cancelButtonDisabledStyle: React.CSSProperties = {
   ...cancelButtonStyle,
-  color: TEXT_DIM,
+  color: colors.textDim,
   borderColor: '#3a3530',
   cursor: 'not-allowed',
   opacity: 0.6
@@ -506,16 +500,16 @@ const deployButtonBaseStyle: React.CSSProperties = {
 
 const deployButtonIdleStyle: React.CSSProperties = {
   ...deployButtonBaseStyle,
-  background: ORANGE,
+  background: colors.orange,
   color: '#000',
-  boxShadow: `0 0 16px rgba(232, 95, 0, 0.4)`
+  boxShadow: `0 0 16px ${colors.orangeGlow}`
 }
 
 const deployButtonHoverStyle: React.CSSProperties = {
   ...deployButtonBaseStyle,
-  background: ORANGE_BRIGHT,
+  background: colors.orangeHover,
   color: '#000',
-  boxShadow: `0 0 24px rgba(255, 107, 26, 0.5)`
+  boxShadow: `0 0 24px rgba(255, 122, 26, 0.5)`
 }
 
 const deployButtonDisabledStyle: React.CSSProperties = {
@@ -528,7 +522,7 @@ const deployButtonDisabledStyle: React.CSSProperties = {
 const deployButtonLoadingStyle: React.CSSProperties = {
   ...deployButtonBaseStyle,
   background: '#2a2015',
-  color: ORANGE,
+  color: colors.orange,
   cursor: 'wait',
-  border: `1px solid ${ORANGE}`
+  border: `1px solid ${colors.orange}`
 }

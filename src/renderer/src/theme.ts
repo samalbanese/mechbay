@@ -14,6 +14,14 @@ export const colors = {
   border: '#2a2a2a',
   borderHud: '#2a2520',
 
+  // DeployModal-specific tokens (migrated from hardcoded constants)
+  bgPanelDarkAlt: '#0a0805',    // was DARK_BG
+  borderHudAlt: '#2a2520',      // was BORDER_COLOR
+  textMutedAlt: '#888',         // was TEXT_MUTED
+  textDim: '#666',              // was TEXT_DIM
+  statusFailedLight: '#ff6b6b', // lighter shade for failed status
+  statusFailedDark: '#c44',     // darker shade for failed borders
+
   // Brand colors
   orange: '#e85f00',
   orangeHover: '#ff7a1a',
@@ -59,11 +67,32 @@ export const animations = {
       0%, 100% { opacity: 1; box-shadow: 0 0 4px currentColor; }
       50% { opacity: 0.6; box-shadow: 0 0 12px currentColor; }
     }
+    @media (prefers-reduced-motion: reduce) {
+      @keyframes ledPulse {
+        0%, 100% { opacity: 1; box-shadow: 0 0 4px currentColor; }
+      }
+    }
   `,
   pulseWorking: `
     @keyframes pulseWorking {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.5; }
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(0.85); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      @keyframes pulseWorking {
+        0%, 100% { opacity: 1; transform: scale(1); }
+      }
+    }
+  `,
+  pulseLed: `
+    @keyframes pulseLed {
+      0%, 100% { box-shadow: 0 0 4px currentColor; }
+      50% { box-shadow: 0 0 12px currentColor; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      @keyframes pulseLed {
+        0%, 100% { box-shadow: 0 0 4px currentColor; }
+      }
     }
   `,
 }
