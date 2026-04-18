@@ -78,10 +78,16 @@ app.whenReady().then(() => {
     }
   }
 
+  // The Kimi runner shells out to our bundled Fireworks wrapper
+  // (scripts/kimi_fireworks.py). app.getAppPath() resolves to the repo
+  // root in dev; in packaged builds it points at the asar root, so we
+  // just need `scripts/` to be shipped with the bundle.
+  const kimiScriptPath = join(app.getAppPath(), 'scripts', 'kimi_fireworks.py')
+
   const runners: Record<AgentFamily, Runner> = {
     claude: new ClaudeRunner(),
     codex: new CodexRunner(),
-    kimi: new KimiRunner(),
+    kimi: new KimiRunner({ scriptPath: kimiScriptPath }),
     gemini: new GeminiRunner(),
     hermes: new HermesRunner()
   }

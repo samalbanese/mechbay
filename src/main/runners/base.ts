@@ -38,6 +38,16 @@ export abstract class CliRunner implements Runner {
   protected abstract command: string
   /** Turn a user prompt into argv for the CLI. */
   protected abstract buildArgs(prompt: string): string[]
+  /**
+   * Optionally pipe content to the child's stdin and close it.
+   * Default: no stdin writes — the runner relies purely on argv.
+   * Override to return the prompt string (or a derived payload) when
+   * argv is impractical (e.g. multi-KB prompts that risk the Windows
+   * ~32k argv ceiling, or a CLI that only accepts stdin).
+   */
+  protected stdinInput(_prompt: string): string | null {
+    return null
+  }
 
   async isAvailable(): Promise<boolean> {
     return (await this.which(this.command)) !== null
@@ -45,6 +55,21 @@ export abstract class CliRunner implements Runner {
 
   async spawn(cwd: string, prompt: string): Promise<SpawnResult> {
     const child = this.spawnProcess(this.command, this.buildArgs(prompt), { cwd, shell: false })
+
+    const stdinPayload = this.stdinInput(prompt)
+    if (stdinPayload !== null && child.stdin) {
+      // EPIPE can fire if the child exits before we finish writing
+      // (ENOENT, permission error, immediate crash). Swallow silently —
+      // the child's exit/error events will surface the real failure
+      // through the stream already.
+      child.stdin.on('error', () => {})
+      try {
+        child.stdin.write(stdinPayload)
+        child.stdin.end()
+      } catch {
+        /* already closed */
+      }
+    }
 
     let aborted = false
     const abort = (): void => {

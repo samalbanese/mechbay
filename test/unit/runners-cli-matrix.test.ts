@@ -4,7 +4,6 @@ import { Readable } from 'stream'
 import type { Runner } from '../../src/main/runners/types'
 import { ClaudeRunner } from '../../src/main/runners/claude'
 import { CodexRunner } from '../../src/main/runners/codex'
-import { KimiRunner } from '../../src/main/runners/kimi'
 import { GeminiRunner } from '../../src/main/runners/gemini'
 
 /**
@@ -17,6 +16,11 @@ import { GeminiRunner } from '../../src/main/runners/gemini'
  *
  * If you add a new CLI-backed runner, add one row to CASES and the
  * same three properties are verified for free.
+ *
+ * Kimi is NOT in this matrix — it shells out to our bundled
+ * kimi_fireworks.py Python wrapper and uses the stdin hook to pipe
+ * the prompt (instead of argv), so the generic matrix doesn't model
+ * its interface. Its interface is covered by runners-kimi.test.ts.
  */
 
 interface Case {
@@ -38,15 +42,6 @@ const CASES: Case[] = [
     Runner: CodexRunner as never,
     expectedCommand: 'codex',
     expectedArgs: (p) => ['exec', p]
-  },
-  {
-    label: 'kimi',
-    Runner: KimiRunner as never,
-    expectedCommand: 'kimi',
-    // `--print` = non-interactive mode; `-p` binds the prompt VALUE.
-    // They are not redundant — dropping `-p` causes modern Kimi to
-    // parse the prompt as a subcommand name ("No such command ...").
-    expectedArgs: (p) => ['--print', '-p', p]
   },
   {
     label: 'gemini',

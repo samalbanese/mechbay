@@ -61,7 +61,7 @@ CLIs on your PATH:
 
 - **Claude Code** (`claude`) — Anthropic's coding agent CLI
 - **Codex** (`codex`) — OpenAI GPT-5.4-Codex via `codex exec`
-- **Kimi** (`kimi`) — Moonshot Kimi via the native CLI's `--print -p <prompt>`
+- **Kimi** — Moonshot Kimi via Fireworks AI, through the bundled `scripts/kimi_fireworks.py` wrapper (uncapped, full agentic tools). Requires `python` on PATH and `FIREWORKS_API_KEY` in env or `~/.claude/env/personal.env`.
 - **Gemini** (`gemini`) — Google Gemini with `-p <prompt> -o text -y`
 - Hermes is wired as a stub — integration deferred
 

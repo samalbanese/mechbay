@@ -1,20 +1,51 @@
-import { CliRunner } from './base'
+import { CliRunner, type CliRunnerDeps } from './base'
+
+export interface KimiRunnerDeps extends Partial<CliRunnerDeps> {
+  /**
+   * Absolute path to `kimi_fireworks.py` bundled with the app.
+   * Resolved at boot in src/main/index.ts via `app.getAppPath()`.
+   */
+  scriptPath: string
+}
 
 /**
- * Moonshot Kimi — invoked as `kimi --print -p "<prompt>"`.
+ * Moonshot Kimi via the Fireworks AI API — invoked as:
+ *   python <scriptPath> - -v
  *
- * `--print`  = non-interactive mode (implicitly enables --yolo).
- * `-p` / `--prompt` = binds the prompt VALUE. Both flags are required:
- * without `-p`, modern Kimi (Click/Typer-based) parses the prompt as
- * a subcommand name and fails with `No such command "<prompt>"`.
+ * The prompt is piped via stdin (the trailing `-` argument tells the
+ * wrapper to read from stdin). The `-v` flag makes the wrapper emit
+ * each tool call to stderr so the LIVE LOG panel surfaces real-time
+ * agent activity ("reading soul.md... running npm test...").
  *
- * We intentionally shell out to the native Kimi CLI here, NOT the
- * Fireworks wrapper. Users who only have the Fireworks path available
- * will show up as NOT DEPLOYABLE until they install the native CLI.
+ * Why Fireworks and not the native `kimi` CLI:
+ *   1. Uncapped usage vs. the native CLI's membership-gated quota.
+ *   2. Full agentic loop with 9 baked-in tools (read_file, edit_file,
+ *      run_command, grep, etc.) — exactly what the deploy-into-facility
+ *      flow needs, no extra wiring in the renderer.
+ *   3. The prompt Kimi sees is assembled from soul.md + memory.md + task
+ *      which can exceed the Windows argv ceiling; stdin sidesteps that.
+ *
+ * Auth is pulled from FIREWORKS_API_KEY (env or ~/.claude/env/personal.env
+ * as a fallback, per the script). The Electron main process inherits the
+ * user's env by default, so no extra wiring is needed.
+ *
+ * Availability: probes `python` on PATH. Users without Python installed
+ * will see Raven-Prime rendered as NOT DEPLOYABLE.
  */
 export class KimiRunner extends CliRunner {
-  protected command = 'kimi'
-  protected buildArgs(prompt: string): string[] {
-    return ['--print', '-p', prompt]
+  protected command = 'python'
+  private scriptPath: string
+
+  constructor(deps: KimiRunnerDeps) {
+    super(deps)
+    this.scriptPath = deps.scriptPath
+  }
+
+  protected buildArgs(_prompt: string): string[] {
+    return [this.scriptPath, '-', '-v']
+  }
+
+  protected stdinInput(prompt: string): string | null {
+    return prompt
   }
 }
