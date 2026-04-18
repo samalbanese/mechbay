@@ -1,0 +1,323 @@
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import type { LogChunk } from '../../../shared/types'
+import { colors, type } from '../theme'
+
+interface LogPaneProps {
+  logs: LogChunk[]
+  deployments?: { id: string; companionName: string; startedAt: number }[]
+}
+
+interface LogLine {
+  id: string
+  stream: LogChunk['stream']
+  text: string
+  timestamp: number
+  deploymentId?: string
+  isSeparator?: boolean
+  deploymentLabel?: string
+}
+
+const MAX_VISIBLE_LOGS = 500
+const SCROLL_LOCK_THRESHOLD = 40
+
+export function LogPane({ logs, deployments = [] }: LogPaneProps): React.JSX.Element {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [isAutoScrollLocked, setIsAutoScrollLocked] = useState(false)
+  const [userHasScrolled, setUserHasScrolled] = useState(false)
+  const lastLogCountRef = useRef(0)
+
+  // Build processed lines with separators between deployments
+  const lines = useMemo((): LogLine[] => {
+    const result: LogLine[] = []
+    let lastDeploymentId: string | null = null
+    let lastTimestamp = 0
+
+    for (const log of logs) {
+      // Check if we need a separator
+      const deploymentChanged = log.deploymentId !== lastDeploymentId
+      const timeGap = log.timestamp - lastTimestamp > 2000 // 2+ second gap
+
+      if ((deploymentChanged || timeGap) && lastDeploymentId !== null) {
+        // Find deployment info for the separator
+        const deployment = deployments.find((d) => d.id === log.deploymentId)
+        if (deployment || deploymentChanged) {
+          result.push({
+            id: `sep-${log.id}`,
+            stream: 'system',
+            text: '',
+            timestamp: log.timestamp,
+            isSeparator: true,
+            deploymentLabel: deployment
+              ? `${deployment.companionName} · ${new Date(deployment.startedAt).toLocaleTimeString()}`
+              : 'New deployment',
+          })
+        }
+      }
+
+      result.push({
+        id: log.id,
+        stream: log.stream,
+        text: log.text,
+        timestamp: log.timestamp,
+        deploymentId: log.deploymentId,
+      })
+
+      lastDeploymentId = log.deploymentId
+      lastTimestamp = log.timestamp
+    }
+
+    // Trim to max visible
+    if (result.length > MAX_VISIBLE_LOGS) {
+      const trimmed = result.slice(-MAX_VISIBLE_LOGS)
+      // Add header indicating truncation
+      const hiddenCount = result.length - MAX_VISIBLE_LOGS
+      trimmed.unshift({
+        id: 'truncated-header',
+        stream: 'system',
+        text: `… ${hiddenCount} earlier entries`,
+        timestamp: 0,
+        isSeparator: true,
+        deploymentLabel: undefined,
+      })
+      return trimmed
+    }
+
+    return result
+  }, [logs, deployments])
+
+  // Auto-scroll to bottom when new logs arrive (unless locked)
+  useEffect(() => {
+    if (logs.length === lastLogCountRef.current) return
+
+    const newLogsAdded = logs.length > lastLogCountRef.current
+    lastLogCountRef.current = logs.length
+
+    if (!isAutoScrollLocked && containerRef.current && newLogsAdded) {
+      const container = containerRef.current
+      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+      if (prefersReducedMotion) {
+        container.scrollTop = container.scrollHeight
+      } else {
+        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
+      }
+    }
+  }, [logs, isAutoScrollLocked])
+
+  // Handle scroll events to detect user scrolling up
+  const handleScroll = useCallback(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
+    const wasLocked = isAutoScrollLocked
+    const shouldLock = distanceFromBottom > SCROLL_LOCK_THRESHOLD
+
+    if (shouldLock !== wasLocked) {
+      setIsAutoScrollLocked(shouldLock)
+    }
+
+    if (!userHasScrolled) {
+      setUserHasScrolled(true)
+    }
+  }, [isAutoScrollLocked, userHasScrolled])
+
+  // Jump to latest button handler
+  const handleJumpToLatest = useCallback(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+    if (prefersReducedMotion) {
+      container.scrollTop = container.scrollHeight
+    } else {
+      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
+    }
+
+    setIsAutoScrollLocked(false)
+  }, [])
+
+  // Empty state
+  if (logs.length === 0) {
+    return (
+      <div style={emptyStateStyle}>
+        <span style={emptyStateTextStyle}>
+          (drag a mech onto a facility to deploy · click a facility to browse its files)
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <div style={containerStyle}>
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        style={scrollAreaStyle}
+        role="log"
+        aria-live="polite"
+        aria-atomic="false"
+      >
+        {lines.map((line) => (
+          <LogLineComponent key={line.id} line={line} />
+        ))}
+      </div>
+
+      {isAutoScrollLocked && (
+        <button
+          type="button"
+          onClick={handleJumpToLatest}
+          style={jumpButtonStyle}
+          aria-label="Jump to latest log entries"
+        >
+          ▼ JUMP TO LATEST
+        </button>
+      )}
+    </div>
+  )
+}
+
+function LogLineComponent({ line }: { line: LogLine }): React.JSX.Element {
+  if (line.isSeparator) {
+    return (
+      <div style={separatorStyle}>
+        <div style={separatorLineStyle} />
+        {line.deploymentLabel && (
+          <span style={separatorLabelStyle}>{line.deploymentLabel}</span>
+        )}
+        {line.text && <span style={separatorTextStyle}>{line.text}</span>}
+        <div style={separatorLineStyle} />
+      </div>
+    )
+  }
+
+  const streamColor = getStreamColor(line.stream)
+
+  return (
+    <div style={{ ...lineStyle, borderLeftColor: streamColor }}>
+      <span style={{ ...streamBadgeStyle, color: streamColor }}>[{line.stream}]</span>
+      <span style={lineTextStyle}>{line.text}</span>
+    </div>
+  )
+}
+
+function getStreamColor(stream: LogChunk['stream']): string {
+  switch (stream) {
+    case 'stdout':
+      return colors.streamStdout
+    case 'stderr':
+      return colors.streamStderr
+    case 'system':
+      return colors.streamSystem
+    default:
+      return colors.textSecondary
+  }
+}
+
+// Styles
+const containerStyle: React.CSSProperties = {
+  position: 'relative',
+  flex: 1,
+  minHeight: 0,
+  display: 'flex',
+  flexDirection: 'column',
+}
+
+const scrollAreaStyle: React.CSSProperties = {
+  background: colors.bgPanelDark,
+  padding: 8,
+  flex: 1,
+  overflow: 'auto',
+  fontFamily: type.mono,
+  fontSize: 11,
+  lineHeight: 1.5,
+}
+
+const emptyStateStyle: React.CSSProperties = {
+  background: colors.bgPanelDark,
+  padding: 8,
+  flex: 1,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  fontFamily: type.mono,
+  fontSize: 11,
+}
+
+const emptyStateTextStyle: React.CSSProperties = {
+  color: colors.textMuted,
+  fontStyle: 'italic',
+  textAlign: 'center',
+}
+
+const lineStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 8,
+  padding: '2px 0',
+  borderLeftWidth: 2,
+  borderLeftStyle: 'solid',
+  paddingLeft: 8,
+  marginBottom: 1,
+}
+
+const streamBadgeStyle: React.CSSProperties = {
+  fontSize: 10,
+  textTransform: 'uppercase',
+  letterSpacing: '0.05em',
+  flexShrink: 0,
+  minWidth: 50,
+}
+
+const lineTextStyle: React.CSSProperties = {
+  color: colors.textPrimary,
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word',
+}
+
+const separatorStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: '8px 0',
+  margin: '4px 0',
+  color: colors.amber,
+  fontSize: 10,
+  letterSpacing: '0.1em',
+}
+
+const separatorLineStyle: React.CSSProperties = {
+  flex: 1,
+  height: 1,
+  background: colors.borderHud,
+  minWidth: 20,
+}
+
+const separatorLabelStyle: React.CSSProperties = {
+  color: colors.amber,
+  fontWeight: 'bold',
+  whiteSpace: 'nowrap',
+}
+
+const separatorTextStyle: React.CSSProperties = {
+  color: colors.textSecondary,
+  fontStyle: 'italic',
+  whiteSpace: 'nowrap',
+}
+
+const jumpButtonStyle: React.CSSProperties = {
+  position: 'absolute',
+  bottom: 8,
+  right: 8,
+  background: colors.bgPanel,
+  border: `1px solid ${colors.amber}`,
+  color: colors.amber,
+  padding: '6px 12px',
+  fontSize: 10,
+  fontWeight: 'bold',
+  letterSpacing: '0.1em',
+  cursor: 'pointer',
+  fontFamily: type.mono,
+  boxShadow: `0 2px 8px ${colors.amberGlow}`,
+  zIndex: 10,
+}
