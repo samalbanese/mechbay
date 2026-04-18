@@ -120,6 +120,33 @@ function isValidState(obj: unknown): obj is AppState {
   )
 }
 
+/**
+ * StateManager — centralized application state with persistence.
+ *
+ * ## Events
+ *
+ * The StateManager extends EventEmitter and emits the following events:
+ *
+ * ### `stateChanged` → `(state: AppState) => void`
+ * Emitted whenever the state is successfully updated. The payload is the
+ * new complete AppState. Listeners should treat this as the source of truth.
+ *
+ * ### `statePersistFailed` → `(state: AppState, err: unknown) => void`
+ * Emitted when a state update succeeds in memory but fails to persist to
+ * the underlying store. The state parameter is the updated (but not persisted)
+ * state; err is the underlying error from the store implementation.
+ *
+ * @example
+ * ```ts
+ * stateManager.on('stateChanged', (state) => {
+ *   console.log('State updated:', state.deployments.length, 'deployments')
+ * })
+ *
+ * stateManager.on('statePersistFailed', (state, err) => {
+ *   console.error('Failed to persist state:', err)
+ * })
+ * ```
+ */
 export class StateManager extends EventEmitter {
   private store: StoreLike
   private cache: AppState

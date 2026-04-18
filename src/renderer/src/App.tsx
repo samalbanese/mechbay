@@ -10,6 +10,8 @@ import { JournalTab } from './components/JournalTab'
 import { BulkImportModal } from './components/BulkImportModal'
 import { LogPane } from './components/LogPane'
 import { CompanionPanel } from './components/CompanionPanel'
+import { HudHeader } from './components/HudHeader'
+import { HudFooter } from './components/HudFooter'
 import { colors, type } from './theme'
 
 type SidebarTab = 'log' | 'files' | 'journal'
@@ -116,107 +118,22 @@ function App(): React.JSX.Element {
     )
   }
 
-  const activeCount =
-    state?.deployments.filter((d) =>
-      ['walking-to', 'working', 'awaiting-input', 'returning'].includes(d.status)
-    ).length ?? 0
-  const queueCount = state?.deployments.filter((d) => d.status === 'queued').length ?? 0
-  const failedCount = state?.deployments.filter((d) => d.status === 'failed').length ?? 0
-  const concurrencyCap = state?.settings.concurrencyCap ?? 3
   const selectedCompanion = state?.companions.find((c) => c.id === selectedCompanionId) ?? null
 
-  // Determine LED color based on fleet state
-  const ledColor = useMemo((): { color: string; pulse: boolean } => {
-    if (failedCount > 0) return { color: colors.ledRed, pulse: true }
-    if (queueCount > 0) return { color: colors.ledAmber, pulse: true }
-    if (activeCount > 0) return { color: colors.ledGreen, pulse: true }
-    return { color: colors.ledGreen, pulse: false }
-  }, [activeCount, queueCount, failedCount])
-
-  // Determine active counter color
-  const activeCounterColor = useMemo((): string => {
-    if (activeCount >= concurrencyCap) return colors.amber
-    return colors.statusWorking
-  }, [activeCount, concurrencyCap])
-
-  // Build deployment info for log pane separators
+  // Build deployment info for log pane separators using Map for O(1) companion lookup
   const deploymentInfo = useMemo(() => {
     if (!state) return []
-    return state.deployments.map((d) => {
-      const companion = state.companions.find((c) => c.id === d.companionId)
-      return {
-        id: d.id,
-        companionName: companion?.name ?? 'Unknown',
-        startedAt: d.startedAt,
-      }
-    })
+    const companionMap = new Map(state.companions.map((c) => [c.id, c]))
+    return state.deployments.map((d) => ({
+      id: d.id,
+      companionName: companionMap.get(d.companionId)?.name ?? 'Unknown',
+      startedAt: d.startedAt,
+    }))
   }, [state])
 
   return (
     <div style={shellStyle}>
-      {/* Top HUD */}
-      <div style={hudTopStyle}>
-        <div style={hudGroupStyle}>
-          <span
-            style={{
-              ...ledStyle,
-              background: ledColor.color,
-              boxShadow: ledColor.pulse ? `0 0 8px ${ledColor.color}` : 'none',
-              animation: ledColor.pulse ? 'ledPulse 2s ease-in-out infinite' : 'none',
-            }}
-          />
-          <span style={hudLabelStyle}>CMDR SAM · BAY 01</span>
-        </div>
-
-        <div style={hudDividerStyle} />
-
-        <div style={hudGroupStyle}>
-          <span style={hudLabelStyle}>
-            MECHS: <span style={hudValueStyle}>{state?.companions.length ?? 0}</span>
-          </span>
-          <span style={hudLabelStyle}>
-            FACILITIES: <span style={hudValueStyle}>{state?.facilities.length ?? 0}</span>
-          </span>
-        </div>
-
-        <div style={hudDividerStyle} />
-
-        <div style={hudGroupStyle}>
-          <button
-            type="button"
-            onClick={() => setBulkImportOpen(true)}
-            style={bulkImportButtonStyle}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = colors.orangeHover
-              e.currentTarget.style.borderColor = colors.orangeHover
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent'
-              e.currentTarget.style.borderColor = colors.orange
-            }}
-          >
-            ⟳ BULK IMPORT
-          </button>
-
-          <div style={activeCounterStyle}>
-            <span style={{ ...hudLabelStyle, color: activeCounterColor }}>
-              ACTIVE: {activeCount}/{concurrencyCap}
-            </span>
-            <div style={miniBarContainerStyle}>
-              <div
-                style={{
-                  ...miniBarFillStyle,
-                  width: `${Math.min((activeCount / concurrencyCap) * 100, 100)}%`,
-                  background: activeCounterColor,
-                }}
-              />
-            </div>
-            {queueCount > 0 && (
-              <span style={queueBadgeStyle}>QUEUE: {queueCount}</span>
-            )}
-          </div>
-        </div>
-      </div>
+      <HudHeader state={state} onBulkImportClick={() => setBulkImportOpen(true)} />
 
       <div style={mainStyle}>
         <div ref={canvasParentRef} style={canvasParentStyle} />
@@ -226,6 +143,7 @@ function App(): React.JSX.Element {
           <CompanionPanel
             companion={selectedCompanion}
             deployments={state?.deployments ?? []}
+            facilities={state?.facilities ?? []}
           />
 
           <div
@@ -301,13 +219,7 @@ function App(): React.JSX.Element {
         </div>
       </div>
 
-      {/* Bottom HUD */}
-      <div style={hudBottomStyle}>
-        <span style={hudHintStyle}>
-          ⟨DRAG⟩ DEPLOY · ⟨CLICK MECH⟩ SELECT · ⟨CLICK FACILITY⟩ BROWSE · ⟨CLICK EMPTY TILE⟩ PLACE BUILDING
-        </span>
-        <span style={hudTimeStyle}>{new Date().toLocaleTimeString()}</span>
-      </div>
+      <HudFooter />
 
       {recoveryZombies && recoveryZombies.length > 0 && (
         <CrashRecoveryModal
@@ -351,23 +263,9 @@ function App(): React.JSX.Element {
           />
         )
       })()}
-
-      {/* Global keyframes for LED pulse animation */}
-      <style>{`
-        @keyframes ledPulse {
-          0%, 100% { opacity: 1; box-shadow: 0 0 4px currentColor; }
-          50% { opacity: 0.6; box-shadow: 0 0 12px currentColor, 0 0 20px currentColor; }
-        }
-        @keyframes pulseWorking {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.4; }
-        }
-      `}</style>
     </div>
   )
 }
-
-const HUD_HEIGHT = 36
 
 const shellStyle: React.CSSProperties = {
   fontFamily: type.mono,
@@ -377,76 +275,6 @@ const shellStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   fontSize: 14,
-}
-
-const hudBaseStyle: React.CSSProperties = {
-  background: colors.bgHud,
-  borderColor: colors.orange,
-  borderStyle: 'solid',
-  padding: '0 16px',
-  display: 'flex',
-  alignItems: 'center',
-  fontSize: 11,
-  height: HUD_HEIGHT,
-  flexShrink: 0,
-}
-
-const hudTopStyle: React.CSSProperties = {
-  ...hudBaseStyle,
-  borderWidth: '0 0 2px 0',
-  justifyContent: 'space-between',
-  gap: 16,
-}
-
-const hudBottomStyle: React.CSSProperties = {
-  ...hudBaseStyle,
-  borderWidth: '2px 0 0 0',
-  justifyContent: 'space-between',
-}
-
-const hudGroupStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 12,
-}
-
-const hudDividerStyle: React.CSSProperties = {
-  width: 1,
-  height: 20,
-  background: colors.borderHud,
-}
-
-const hudLabelStyle: React.CSSProperties = {
-  letterSpacing: type.hudTracking,
-  textTransform: 'uppercase',
-  color: colors.textSecondary,
-  fontSize: 11,
-}
-
-const hudValueStyle: React.CSSProperties = {
-  color: colors.textPrimary,
-  fontWeight: 'bold',
-}
-
-const hudHintStyle: React.CSSProperties = {
-  letterSpacing: type.hudTracking,
-  fontSize: 10,
-  color: colors.textMuted,
-}
-
-const hudTimeStyle: React.CSSProperties = {
-  letterSpacing: type.hudTracking,
-  fontSize: 10,
-  color: colors.textSecondary,
-}
-
-const ledStyle: React.CSSProperties = {
-  display: 'inline-block',
-  width: 8,
-  height: 8,
-  borderRadius: '50%',
-  marginRight: 8,
-  flexShrink: 0,
 }
 
 const mainStyle: React.CSSProperties = {
@@ -516,45 +344,6 @@ const tabCloseStyle: React.CSSProperties = {
   padding: '2px 8px',
   cursor: 'pointer',
   fontFamily: 'inherit',
-}
-
-const bulkImportButtonStyle: React.CSSProperties = {
-  background: 'transparent',
-  color: colors.textPrimary,
-  border: `1px solid ${colors.orange}`,
-  padding: '4px 12px',
-  fontSize: 10,
-  fontWeight: 'bold',
-  letterSpacing: type.hudTracking,
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-  textTransform: 'uppercase',
-  transition: 'all 0.15s ease',
-}
-
-const activeCounterStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-}
-
-const miniBarContainerStyle: React.CSSProperties = {
-  width: 40,
-  height: 4,
-  background: colors.border,
-  borderRadius: 2,
-  overflow: 'hidden',
-}
-
-const miniBarFillStyle: React.CSSProperties = {
-  height: '100%',
-  transition: 'width 0.3s ease, background 0.3s ease',
-}
-
-const queueBadgeStyle: React.CSSProperties = {
-  color: colors.amber,
-  fontSize: 10,
-  letterSpacing: type.hudTracking,
 }
 
 export default App

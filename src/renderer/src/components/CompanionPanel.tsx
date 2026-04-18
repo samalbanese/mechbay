@@ -1,10 +1,11 @@
 import { useMemo } from 'react'
-import type { Companion, Deployment, DeploymentStatus } from '../../../shared/types'
+import type { Companion, Deployment, DeploymentStatus, Facility } from '../../../shared/types'
 import { colors, type } from '../theme'
 
 interface CompanionPanelProps {
   companion: Companion | null
   deployments: Deployment[]
+  facilities: Facility[]
 }
 
 interface DeploymentHistoryItem {
@@ -15,7 +16,16 @@ interface DeploymentHistoryItem {
   relativeTime: string
 }
 
-export function CompanionPanel({ companion, deployments }: CompanionPanelProps): React.JSX.Element {
+export function CompanionPanel({ companion, deployments, facilities }: CompanionPanelProps): React.JSX.Element {
+  // Build facility lookup map for O(1) access
+  const facilityMap = useMemo(() => {
+    const map = new Map<string, Facility>()
+    for (const f of facilities) {
+      map.set(f.id, f)
+    }
+    return map
+  }, [facilities])
+
   // Get deployment history for this companion
   const history = useMemo((): DeploymentHistoryItem[] => {
     if (!companion) return []
@@ -25,14 +35,17 @@ export function CompanionPanel({ companion, deployments }: CompanionPanelProps):
       .sort((a, b) => b.startedAt - a.startedAt)
       .slice(0, 5)
 
-    return companionDeployments.map((d) => ({
-      id: d.id,
-      facilityName: d.facilityId.slice(0, 8), // We'll show facility name if available
-      status: d.status,
-      startedAt: d.startedAt,
-      relativeTime: formatRelativeTime(d.startedAt),
-    }))
-  }, [companion, deployments])
+    return companionDeployments.map((d) => {
+      const facility = facilityMap.get(d.facilityId)
+      return {
+        id: d.id,
+        facilityName: facility?.name ?? d.facilityId.slice(0, 8),
+        status: d.status,
+        startedAt: d.startedAt,
+        relativeTime: formatRelativeTime(d.startedAt),
+      }
+    })
+  }, [companion, deployments, facilityMap])
 
   // Calculate last active time
   const lastActive = useMemo((): string => {
