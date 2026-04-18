@@ -6,8 +6,10 @@ import { bus } from './bus'
 import { DeployModal } from './components/DeployModal'
 import { CrashRecoveryModal } from './components/CrashRecoveryModal'
 import { FileBrowser } from './components/FileBrowser'
+import { JournalTab } from './components/JournalTab'
+import { BulkImportModal } from './components/BulkImportModal'
 
-type SidebarTab = 'log' | 'files'
+type SidebarTab = 'log' | 'files' | 'journal'
 
 function App(): React.JSX.Element {
   const [state, setState] = useState<AppState | null>(null)
@@ -21,6 +23,7 @@ function App(): React.JSX.Element {
   const [browsingFacilityId, setBrowsingFacilityId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<SidebarTab>('log')
   const [error, setError] = useState<string | null>(null)
+  const [bulkImportOpen, setBulkImportOpen] = useState(false)
 
   const canvasParentRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<BayScene | null>(null)
@@ -62,6 +65,10 @@ function App(): React.JSX.Element {
     }
     const offSelect = (payload: { companionId: string | null }): void => {
       setSelectedCompanionId(payload.companionId)
+      // Switch to Journal tab when a companion is selected
+      if (payload.companionId) {
+        setActiveTab('journal')
+      }
     }
     const offFacility = (payload: { facilityId: string }): void => {
       setBrowsingFacilityId(payload.facilityId)
@@ -126,9 +133,18 @@ function App(): React.JSX.Element {
         <span>
           MECHS: {state?.companions.length ?? 0} · FACILITIES: {state?.facilities.length ?? 0}
         </span>
-        <span style={{ color: queueCount > 0 ? '#ffcc33' : '#e85f00' }}>
-          ACTIVE: {activeCount} / {state?.settings.concurrencyCap ?? 3}
-          {queueCount > 0 && ` · QUEUE: ${queueCount}`}
+        <span style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            type="button"
+            onClick={() => setBulkImportOpen(true)}
+            style={bulkImportButtonStyle}
+          >
+            ⟳ BULK IMPORT
+          </button>
+          <span style={{ color: queueCount > 0 ? '#ffcc33' : '#e85f00' }}>
+            ACTIVE: {activeCount} / {state?.settings.concurrencyCap ?? 3}
+            {queueCount > 0 && ` · QUEUE: ${queueCount}`}
+          </span>
         </span>
       </div>
 
@@ -194,6 +210,13 @@ function App(): React.JSX.Element {
                   </button>
                 </>
               )}
+              <button
+                type="button"
+                style={activeTab === 'journal' ? tabActiveStyle : tabStyle}
+                onClick={() => setActiveTab('journal')}
+              >
+                JOURNAL
+              </button>
             </div>
 
             {activeTab === 'log' && (
@@ -214,6 +237,10 @@ function App(): React.JSX.Element {
                 />
               )
             })()}
+
+            {activeTab === 'journal' && (
+              <JournalTab companionId={selectedCompanionId} />
+            )}
           </div>
         </div>
       </div>
@@ -228,6 +255,12 @@ function App(): React.JSX.Element {
         <CrashRecoveryModal
           zombies={recoveryZombies}
           onDismiss={() => setRecoveryZombies(null)}
+        />
+      )}
+
+      {bulkImportOpen && (
+        <BulkImportModal
+          onClose={() => setBulkImportOpen(false)}
         />
       )}
 
@@ -387,6 +420,19 @@ const tabCloseStyle: React.CSSProperties = {
   padding: '2px 8px',
   cursor: 'pointer',
   fontFamily: 'inherit'
+}
+
+const bulkImportButtonStyle: React.CSSProperties = {
+  background: '#e85f00',
+  color: '#000',
+  border: 0,
+  padding: '4px 12px',
+  fontSize: 10,
+  fontWeight: 'bold',
+  letterSpacing: '0.1em',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  marginRight: 8
 }
 
 export default App

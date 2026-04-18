@@ -14,7 +14,11 @@ export const IPC = {
   FACILITY_ADD_FROM_PICKER: 'mechbay:facility:addFromPicker',
   SCAN_PROJECTS: 'mechbay:scan:projects',
   CLI_RESCAN: 'mechbay:cli:rescan',
-  RECOVERY_ZOMBIES: 'mechbay:recovery:zombies'
+  RECOVERY_ZOMBIES: 'mechbay:recovery:zombies',
+  SOUL_READ: 'mechbay:soul:read',
+  SOUL_WRITE: 'mechbay:soul:write',
+  MEMORY_READ: 'mechbay:memory:read',
+  BULK_IMPORT_RUN: 'mechbay:bulk-import:run'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]

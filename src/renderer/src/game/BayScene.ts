@@ -196,16 +196,40 @@ export class BayScene extends Phaser.Scene {
       sprite.setInteractive({ draggable: true, pixelPerfect: false })
       this.input.setDraggable(sprite)
 
-      sprite.on('pointerdown', () => {
-        bus.emit('companionSelected', { companionId: companion.id })
-        sprite.setTint(0xffcc33)
-        this.time.delayedCall(120, () => sprite.clearTint())
+      // Track drag start position to distinguish click from drag
+      let dragStartX = 0
+      let dragStartY = 0
+      let isDragging = false
+
+      sprite.on('dragstart', (_p: Phaser.Input.Pointer) => {
+        dragStartX = sprite.x
+        dragStartY = sprite.y
+        isDragging = false
       })
-      sprite.on('drag', (_p: Phaser.Input.Pointer, dx: number, dy: number) => {
-        sprite.x = dx
-        sprite.y = dy
+
+      sprite.on('drag', (_p: Phaser.Input.Pointer, dragX: number, dragY: number) => {
+        sprite.x = dragX
+        sprite.y = dragY
+        // Mark as dragging if moved more than threshold
+        if (Math.hypot(dragX - dragStartX, dragY - dragStartY) > CLICK_DRAG_THRESHOLD) {
+          isDragging = true
+        }
       })
-      sprite.on('dragend', () => this.handleDragEnd(companion.id, sprite))
+
+      sprite.on('dragend', () => {
+        this.handleDragEnd(companion.id, sprite)
+        isDragging = false
+      })
+
+      // Use pointerup to detect clicks (not pointerdown to avoid drag conflict)
+      sprite.on('pointerup', () => {
+        // Only emit companionSelected if we didn't drag significantly
+        if (!isDragging) {
+          bus.emit('companionSelected', { companionId: companion.id })
+          sprite.setTint(0xffcc33)
+          this.time.delayedCall(120, () => sprite.clearTint())
+        }
+      })
 
       this.mechSprites.set(companion.id, sprite)
     }

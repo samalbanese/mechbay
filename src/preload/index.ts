@@ -7,7 +7,12 @@ import type {
   DeploymentStatus,
   Facility,
   FsNode,
-  LogChunk
+  LogChunk,
+  SoulReadResult,
+  SoulWriteResult,
+  MemoryReadResult,
+  BulkImportRunResult,
+  DiscoveredProject
 } from '../shared/types'
 
 const mechbayApi = {
@@ -38,7 +43,19 @@ const mechbayApi = {
   fsReadFile: (p: string): Promise<string> =>
     ipcRenderer.invoke(IPC.FS_READ_FILE, { path: p }),
   addFacilityFromPicker: (tile: { x: number; y: number }): Promise<Facility | null> =>
-    ipcRenderer.invoke(IPC.FACILITY_ADD_FROM_PICKER, { tile })
+    ipcRenderer.invoke(IPC.FACILITY_ADD_FROM_PICKER, { tile }),
+  // Soul/Memory IPC for Journal tab
+  soulRead: (companionId: string): Promise<SoulReadResult> =>
+    ipcRenderer.invoke(IPC.SOUL_READ, { companionId }),
+  soulWrite: (companionId: string, content: string): Promise<SoulWriteResult> =>
+    ipcRenderer.invoke(IPC.SOUL_WRITE, { companionId, content }),
+  memoryRead: (companionId: string): Promise<MemoryReadResult> =>
+    ipcRenderer.invoke(IPC.MEMORY_READ, { companionId }),
+  // Bulk Import IPC
+  scanProjects: (rootDir?: string): Promise<DiscoveredProject[]> =>
+    ipcRenderer.invoke(IPC.SCAN_PROJECTS, rootDir),
+  bulkImportRun: (selectedPaths: string[]): Promise<BulkImportRunResult> =>
+    ipcRenderer.invoke(IPC.BULK_IMPORT_RUN, { selectedPaths })
 }
 
 export type MechBayApi = typeof mechbayApi

@@ -92,6 +92,57 @@ export interface LogChunk {
  */
 export type StateSchemaVersion = 2
 
+/** Payload for SOUL_READ IPC call. */
+export interface SoulReadPayload {
+  companionId: string
+}
+
+/** Result for SOUL_READ IPC call. */
+export type SoulReadResult =
+  | { ok: true; content: string }
+  | { ok: false; error: string }
+
+/** Payload for SOUL_WRITE IPC call. */
+export interface SoulWritePayload {
+  companionId: string
+  content: string
+}
+
+/** Result for SOUL_WRITE IPC call. */
+export type SoulWriteResult =
+  | { ok: true }
+  | { ok: false; error: string }
+
+/** Payload for MEMORY_READ IPC call. */
+export interface MemoryReadPayload {
+  companionId: string
+}
+
+/** Result for MEMORY_READ IPC call. */
+export type MemoryReadResult =
+  | { ok: true; content: string }
+  | { ok: false; error: string }
+
+/** Payload for BULK_IMPORT_RUN IPC call. */
+export interface BulkImportRunPayload {
+  selectedPaths: string[]
+}
+
+/** A directory discovered by the project scanner. */
+export interface DiscoveredProject {
+  /** Directory name (basename, not the full path). */
+  name: string
+  /** Absolute path on disk. */
+  path: string
+  /** Which marker files/dirs triggered the match. */
+  markers: string[]
+}
+
+/** Result for BULK_IMPORT_RUN IPC call. */
+export type BulkImportRunResult =
+  | { ok: true; imported: number; facilities: Facility[] }
+  | { ok: false; error: string }
+
 export interface AppState {
   version: StateSchemaVersion
   companions: Companion[]
