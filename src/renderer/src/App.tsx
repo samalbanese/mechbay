@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import Phaser from 'phaser'
-import type { AppState, Deployment, LogChunk } from '../../shared/types'
+import type { AppState, Deployment } from '../../shared/types'
 import { BayScene } from './game/BayScene'
 import { bus } from './bus'
 import { DeployModal } from './components/DeployModal'
@@ -8,12 +8,14 @@ import { CrashRecoveryModal } from './components/CrashRecoveryModal'
 import { FileBrowser } from './components/FileBrowser'
 import { JournalTab } from './components/JournalTab'
 import { BulkImportModal } from './components/BulkImportModal'
+import { LogPane } from './components/LogPane'
+import { CompanionPanel } from './components/CompanionPanel'
+import { colors, type } from './theme'
 
 type SidebarTab = 'log' | 'files' | 'journal'
 
 function App(): React.JSX.Element {
   const [state, setState] = useState<AppState | null>(null)
-  const [logs, setLogs] = useState<LogChunk[]>([])
   const [selectedCompanionId, setSelectedCompanionId] = useState<string | null>(null)
   const [pendingDeploy, setPendingDeploy] = useState<{
     companionId: string
@@ -33,11 +35,9 @@ function App(): React.JSX.Element {
   useEffect(() => {
     window.mechbay.getState().then(setState).catch((e) => setError(String(e)))
     const offState = window.mechbay.onStateChange(setState)
-    const offLog = window.mechbay.onLogChunk((c) => setLogs((prev) => [...prev.slice(-499), c]))
     const offRecovery = window.mechbay.onRecoveryZombies((zombies) => setRecoveryZombies(zombies))
     return () => {
       offState()
-      offLog()
       offRecovery()
     }
   }, [])
@@ -121,55 +121,112 @@ function App(): React.JSX.Element {
       ['walking-to', 'working', 'awaiting-input', 'returning'].includes(d.status)
     ).length ?? 0
   const queueCount = state?.deployments.filter((d) => d.status === 'queued').length ?? 0
+  const failedCount = state?.deployments.filter((d) => d.status === 'failed').length ?? 0
+  const concurrencyCap = state?.settings.concurrencyCap ?? 3
   const selectedCompanion = state?.companions.find((c) => c.id === selectedCompanionId) ?? null
+
+  // Determine LED color based on fleet state
+  const ledColor = useMemo((): { color: string; pulse: boolean } => {
+    if (failedCount > 0) return { color: colors.ledRed, pulse: true }
+    if (queueCount > 0) return { color: colors.ledAmber, pulse: true }
+    if (activeCount > 0) return { color: colors.ledGreen, pulse: true }
+    return { color: colors.ledGreen, pulse: false }
+  }, [activeCount, queueCount, failedCount])
+
+  // Determine active counter color
+  const activeCounterColor = useMemo((): string => {
+    if (activeCount >= concurrencyCap) return colors.amber
+    return colors.statusWorking
+  }, [activeCount, concurrencyCap])
+
+  // Build deployment info for log pane separators
+  const deploymentInfo = useMemo(() => {
+    if (!state) return []
+    return state.deployments.map((d) => {
+      const companion = state.companions.find((c) => c.id === d.companionId)
+      return {
+        id: d.id,
+        companionName: companion?.name ?? 'Unknown',
+        startedAt: d.startedAt,
+      }
+    })
+  }, [state])
 
   return (
     <div style={shellStyle}>
-      {/* Top HUD (Wave 2 placeholder, Task 2.3 formalizes) */}
+      {/* Top HUD */}
       <div style={hudTopStyle}>
-        <span>
-          <span style={ledStyle}></span>CMDR SAM · BAY 01
-        </span>
-        <span>
-          MECHS: {state?.companions.length ?? 0} · FACILITIES: {state?.facilities.length ?? 0}
-        </span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={hudGroupStyle}>
+          <span
+            style={{
+              ...ledStyle,
+              background: ledColor.color,
+              boxShadow: ledColor.pulse ? `0 0 8px ${ledColor.color}` : 'none',
+              animation: ledColor.pulse ? 'ledPulse 2s ease-in-out infinite' : 'none',
+            }}
+          />
+          <span style={hudLabelStyle}>CMDR SAM · BAY 01</span>
+        </div>
+
+        <div style={hudDividerStyle} />
+
+        <div style={hudGroupStyle}>
+          <span style={hudLabelStyle}>
+            MECHS: <span style={hudValueStyle}>{state?.companions.length ?? 0}</span>
+          </span>
+          <span style={hudLabelStyle}>
+            FACILITIES: <span style={hudValueStyle}>{state?.facilities.length ?? 0}</span>
+          </span>
+        </div>
+
+        <div style={hudDividerStyle} />
+
+        <div style={hudGroupStyle}>
           <button
             type="button"
             onClick={() => setBulkImportOpen(true)}
             style={bulkImportButtonStyle}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = colors.orangeHover
+              e.currentTarget.style.borderColor = colors.orangeHover
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent'
+              e.currentTarget.style.borderColor = colors.orange
+            }}
           >
             ⟳ BULK IMPORT
           </button>
-          <span style={{ color: queueCount > 0 ? '#ffcc33' : '#e85f00' }}>
-            ACTIVE: {activeCount} / {state?.settings.concurrencyCap ?? 3}
-            {queueCount > 0 && ` · QUEUE: ${queueCount}`}
-          </span>
-        </span>
+
+          <div style={activeCounterStyle}>
+            <span style={{ ...hudLabelStyle, color: activeCounterColor }}>
+              ACTIVE: {activeCount}/{concurrencyCap}
+            </span>
+            <div style={miniBarContainerStyle}>
+              <div
+                style={{
+                  ...miniBarFillStyle,
+                  width: `${Math.min((activeCount / concurrencyCap) * 100, 100)}%`,
+                  background: activeCounterColor,
+                }}
+              />
+            </div>
+            {queueCount > 0 && (
+              <span style={queueBadgeStyle}>QUEUE: {queueCount}</span>
+            )}
+          </div>
+        </div>
       </div>
 
       <div style={mainStyle}>
         <div ref={canvasParentRef} style={canvasParentStyle} />
 
-        {/* Sidebar: companion stats + live log */}
+        {/* Sidebar */}
         <div style={sidebarStyle}>
-          {selectedCompanion && (
-            <div style={sidebarPanelStyle}>
-              <div style={{ color: '#ffcc33', fontSize: 11, letterSpacing: '0.15em' }}>
-                SELECTED
-              </div>
-              <div style={{ fontSize: 16, margin: '4px 0' }}>{selectedCompanion.name}</div>
-              <div style={{ fontSize: 11, color: '#888' }}>
-                {selectedCompanion.mechClass.toUpperCase()} · {selectedCompanion.family}
-              </div>
-              <div style={{ fontSize: 11, marginTop: 6 }}>
-                CLI:{' '}
-                <span style={{ color: selectedCompanion.cliAvailable ? '#0f0' : '#f44' }}>
-                  {selectedCompanion.cliAvailable ? 'AVAILABLE' : '⚠ NOT DEPLOYABLE'}
-                </span>
-              </div>
-            </div>
-          )}
+          <CompanionPanel
+            companion={selectedCompanion}
+            deployments={state?.deployments ?? []}
+          />
 
           <div
             style={{
@@ -177,7 +234,7 @@ function App(): React.JSX.Element {
               flex: 1,
               minHeight: 0,
               display: 'flex',
-              flexDirection: 'column'
+              flexDirection: 'column',
             }}
           >
             <div style={tabRowStyle}>
@@ -220,16 +277,15 @@ function App(): React.JSX.Element {
             </div>
 
             {activeTab === 'log' && (
-              <pre style={logPaneStyle}>
-                {logs.length === 0
-                  ? '(drag a mech onto a facility to deploy · click a facility to browse its files)'
-                  : logs.map((l) => `[${l.stream}] ${l.text}`).join('')}
-              </pre>
+              <LogPane
+                logs={state?.logChunks ?? []}
+                deployments={deploymentInfo}
+              />
             )}
 
             {activeTab === 'files' && browsingFacilityId && state && (() => {
               const facility = state.facilities.find((f) => f.id === browsingFacilityId)
-              if (!facility) return <div style={{ color: '#888' }}>Facility not found.</div>
+              if (!facility) return <div style={{ color: colors.textSecondary }}>Facility not found.</div>
               return (
                 <FileBrowser
                   facilityPath={facility.path}
@@ -247,8 +303,10 @@ function App(): React.JSX.Element {
 
       {/* Bottom HUD */}
       <div style={hudBottomStyle}>
-        <span>⟨DRAG⟩ DEPLOY · ⟨CLICK MECH⟩ SELECT · ⟨CLICK FACILITY⟩ BROWSE · ⟨CLICK EMPTY TILE⟩ PLACE BUILDING</span>
-        <span>{new Date().toLocaleTimeString()}</span>
+        <span style={hudHintStyle}>
+          ⟨DRAG⟩ DEPLOY · ⟨CLICK MECH⟩ SELECT · ⟨CLICK FACILITY⟩ BROWSE · ⟨CLICK EMPTY TILE⟩ PLACE BUILDING
+        </span>
+        <span style={hudTimeStyle}>{new Date().toLocaleTimeString()}</span>
       </div>
 
       {recoveryZombies && recoveryZombies.length > 0 && (
@@ -293,43 +351,93 @@ function App(): React.JSX.Element {
           />
         )
       })()}
+
+      {/* Global keyframes for LED pulse animation */}
+      <style>{`
+        @keyframes ledPulse {
+          0%, 100% { opacity: 1; box-shadow: 0 0 4px currentColor; }
+          50% { opacity: 0.6; box-shadow: 0 0 12px currentColor, 0 0 20px currentColor; }
+        }
+        @keyframes pulseWorking {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
+        }
+      `}</style>
     </div>
   )
 }
 
-const HUD_HEIGHT = 32
+const HUD_HEIGHT = 36
 
 const shellStyle: React.CSSProperties = {
-  fontFamily: '"Courier New", monospace',
-  color: '#e85f00',
-  background: '#0a0805',
+  fontFamily: type.mono,
+  color: colors.orange,
+  background: colors.bgPanelDark,
   minHeight: '100vh',
   display: 'flex',
   flexDirection: 'column',
-  fontSize: 14
+  fontSize: 14,
 }
 
 const hudBaseStyle: React.CSSProperties = {
-  background: '#1a1510',
-  borderColor: '#e85f00',
+  background: colors.bgHud,
+  borderColor: colors.orange,
   borderStyle: 'solid',
-  padding: '6px 16px',
+  padding: '0 16px',
   display: 'flex',
-  justifyContent: 'space-between',
   alignItems: 'center',
   fontSize: 11,
-  letterSpacing: '0.1em',
-  height: HUD_HEIGHT
+  height: HUD_HEIGHT,
+  flexShrink: 0,
 }
 
 const hudTopStyle: React.CSSProperties = {
   ...hudBaseStyle,
-  borderWidth: '0 0 2px 0'
+  borderWidth: '0 0 2px 0',
+  justifyContent: 'space-between',
+  gap: 16,
 }
 
 const hudBottomStyle: React.CSSProperties = {
   ...hudBaseStyle,
-  borderWidth: '2px 0 0 0'
+  borderWidth: '2px 0 0 0',
+  justifyContent: 'space-between',
+}
+
+const hudGroupStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 12,
+}
+
+const hudDividerStyle: React.CSSProperties = {
+  width: 1,
+  height: 20,
+  background: colors.borderHud,
+}
+
+const hudLabelStyle: React.CSSProperties = {
+  letterSpacing: type.hudTracking,
+  textTransform: 'uppercase',
+  color: colors.textSecondary,
+  fontSize: 11,
+}
+
+const hudValueStyle: React.CSSProperties = {
+  color: colors.textPrimary,
+  fontWeight: 'bold',
+}
+
+const hudHintStyle: React.CSSProperties = {
+  letterSpacing: type.hudTracking,
+  fontSize: 10,
+  color: colors.textMuted,
+}
+
+const hudTimeStyle: React.CSSProperties = {
+  letterSpacing: type.hudTracking,
+  fontSize: 10,
+  color: colors.textSecondary,
 }
 
 const ledStyle: React.CSSProperties = {
@@ -337,51 +445,39 @@ const ledStyle: React.CSSProperties = {
   width: 8,
   height: 8,
   borderRadius: '50%',
-  background: '#0f0',
-  marginRight: 6
+  marginRight: 8,
+  flexShrink: 0,
 }
 
 const mainStyle: React.CSSProperties = {
   flex: 1,
   display: 'flex',
-  minHeight: 0
+  minHeight: 0,
 }
 
 const canvasParentStyle: React.CSSProperties = {
   flex: 1,
-  background: '#0a0805',
+  background: colors.bgPanelDark,
   overflow: 'hidden',
-  minWidth: 0
+  minWidth: 0,
 }
 
 const sidebarStyle: React.CSSProperties = {
   width: 360,
-  borderLeft: '1px solid #2a2520',
+  borderLeft: `1px solid ${colors.borderHud}`,
   padding: 12,
   display: 'flex',
   flexDirection: 'column',
   gap: 12,
-  minHeight: 0
+  minHeight: 0,
+  flexShrink: 0,
 }
 
 const sidebarPanelStyle: React.CSSProperties = {
-  background: '#1a1510',
-  border: '1px solid #2a2520',
+  background: colors.bgHud,
+  border: `1px solid ${colors.borderHud}`,
   padding: 10,
-  fontSize: 12
-}
-
-const logPaneStyle: React.CSSProperties = {
-  background: '#0a0805',
-  padding: 8,
-  flex: 1,
-  overflow: 'auto',
-  color: '#ccc',
-  fontFamily: 'inherit',
-  fontSize: 11,
-  whiteSpace: 'pre-wrap',
-  margin: 0,
-  minHeight: 0
+  fontSize: 12,
 }
 
 const tabRowStyle: React.CSSProperties = {
@@ -389,50 +485,76 @@ const tabRowStyle: React.CSSProperties = {
   alignItems: 'center',
   gap: 2,
   marginBottom: 8,
-  borderBottom: '1px solid #2a2520'
+  borderBottom: `1px solid ${colors.borderHud}`,
 }
 
 const tabStyle: React.CSSProperties = {
   background: 'transparent',
   border: 0,
   borderBottom: '2px solid transparent',
-  color: '#666',
+  color: colors.textDark,
   fontSize: 10,
-  letterSpacing: '0.15em',
+  letterSpacing: type.labelTracking,
   padding: '4px 10px',
   cursor: 'pointer',
   fontFamily: 'inherit',
-  fontWeight: 'bold'
+  fontWeight: 'bold',
 }
 
 const tabActiveStyle: React.CSSProperties = {
   ...tabStyle,
-  color: '#ffcc33',
-  borderBottom: '2px solid #ffcc33'
+  color: colors.amber,
+  borderBottom: `2px solid ${colors.amber}`,
 }
 
 const tabCloseStyle: React.CSSProperties = {
   marginLeft: 'auto',
   background: 'transparent',
   border: 0,
-  color: '#666',
+  color: colors.textDark,
   fontSize: 14,
   padding: '2px 8px',
   cursor: 'pointer',
-  fontFamily: 'inherit'
+  fontFamily: 'inherit',
 }
 
 const bulkImportButtonStyle: React.CSSProperties = {
-  background: '#e85f00',
-  color: '#000',
-  border: 0,
+  background: 'transparent',
+  color: colors.textPrimary,
+  border: `1px solid ${colors.orange}`,
   padding: '4px 12px',
   fontSize: 10,
   fontWeight: 'bold',
-  letterSpacing: '0.1em',
+  letterSpacing: type.hudTracking,
   cursor: 'pointer',
   fontFamily: 'inherit',
-  marginRight: 8
+  textTransform: 'uppercase',
+  transition: 'all 0.15s ease',
+}
+
+const activeCounterStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+}
+
+const miniBarContainerStyle: React.CSSProperties = {
+  width: 40,
+  height: 4,
+  background: colors.border,
+  borderRadius: 2,
+  overflow: 'hidden',
+}
+
+const miniBarFillStyle: React.CSSProperties = {
+  height: '100%',
+  transition: 'width 0.3s ease, background 0.3s ease',
+}
+
+const queueBadgeStyle: React.CSSProperties = {
+  color: colors.amber,
+  fontSize: 10,
+  letterSpacing: type.hudTracking,
 }
 
 export default App
