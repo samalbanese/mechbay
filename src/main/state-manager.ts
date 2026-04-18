@@ -138,13 +138,8 @@ function isValidState(obj: unknown): obj is AppState {
  *
  * @example
  * ```ts
- * stateManager.on('stateChanged', (state) => {
- *   console.log('State updated:', state.deployments.length, 'deployments')
- * })
- *
- * stateManager.on('statePersistFailed', (state, err) => {
- *   console.error('Failed to persist state:', err)
- * })
+ * stateManager.on('stateChanged', handleStateUpdate)
+ * stateManager.on('statePersistFailed', handlePersistFailure)
  * ```
  */
 export class StateManager extends EventEmitter {
