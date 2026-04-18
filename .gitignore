@@ -19,3 +19,9 @@ coverage/
 
 # Scratch (cross-family review prompts/outputs, Codex/Kimi artifacts)
 .tmp/
+
+# Git worktrees for parallel agent work
+.worktrees/
+
+# TypeScript incremental build artifacts
+*.tsbuildinfo
