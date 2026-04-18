@@ -7,7 +7,9 @@ Codex, Kimi, Gemini, Hermes — as distinct mech classes onto
 industrial-facility project-buildings in an isometric MechWarrior-styled
 command bay. Each mech has a soul and a memory.
 
-![MechBay preview](docs/preview.png)
+![MechBay preview](docs/preview.gif)
+
+*30-second demo: drag a mech onto a facility, watch the live log, see the completion.*
 
 ## What it does
 
@@ -104,6 +106,7 @@ npm test             # vitest run (all suites)
 npm run test:watch   # vitest watch mode
 npm run build        # typecheck + electron-vite build → out/
 npm run build:win    # → electron-builder Windows NSIS installer (dist/)
+npm run chromakey    # process mech/facility sprites (jimp-based)
 ```
 
 ## Status
