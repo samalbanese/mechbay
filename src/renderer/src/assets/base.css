@@ -44,7 +44,12 @@ ul {
 }
 
 body {
-  min-height: 100vh;
+  /* `height: 100vh` (not min-height) caps the document at the viewport so
+     flex descendants with `flex: 1` have a bounded container to shrink
+     within. `min-height: 100vh` lets the body grow unbounded when a
+     descendant (like a live log) adds content — the LIVE LOG bug of 2026-04-18. */
+  height: 100vh;
+  overflow: hidden;
   color: var(--color-text);
   background: var(--color-background);
   line-height: 1.6;

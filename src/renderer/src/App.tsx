@@ -271,7 +271,7 @@ const shellStyle: React.CSSProperties = {
   fontFamily: type.mono,
   color: colors.orange,
   background: colors.bgPanelDark,
-  minHeight: '100vh',
+  height: '100%',
   display: 'flex',
   flexDirection: 'column',
   fontSize: 14,
