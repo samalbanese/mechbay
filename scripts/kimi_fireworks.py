@@ -45,6 +45,7 @@ from pathlib import Path
 API_BASE = "https://api.fireworks.ai/inference/v1"
 DEFAULT_MODEL = "accounts/fireworks/routers/kimi-k2p5-turbo"
 ENV_FILE = Path.home() / ".claude" / "env" / "personal.env"
+API_KEY_ENV = "FIREWORKS_API_KEY"
 
 # Directories to skip during file searches
 SKIP_DIRS = {
@@ -244,14 +245,15 @@ TOOLS = [
 
 def get_api_key():
     """Get Fireworks API key from environment or vault file."""
-    key = os.environ.get("FIREWORKS_API_KEY")
+    key = os.environ.get(API_KEY_ENV)
     if key:
         return key
     if ENV_FILE.exists():
+        prefix = f"{API_KEY_ENV}="
         for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
             line = line.strip()
-            if line.startswith("FIREWORKS_API_KEY=") and not line.startswith("#"):
-                return line.split("=", 1)[1].strip()
+            if line.startswith(prefix) and not line.startswith("#"):
+                return line[len(prefix):].strip()
     return None
 
 
