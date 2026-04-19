@@ -23,6 +23,7 @@ import { scanProjects, type DiscoveredProject } from './project-scanner'
 import { assembleSystemPrompt, appendMemoryEntry, readSoul, writeSoul, readMemory } from './soul-memory'
 import type { FsReader, FsNode } from './fs-reader'
 import { facilityTypeFromName } from './facility-type-hash'
+import { NarrationParser } from './log-narration-parser'
 
 const GRID_W = 16
 const GRID_H = 16
@@ -312,15 +313,20 @@ export async function executeDeployment(
       taskPrompt
     )
     const result = await runner.spawn(facility.path, fullPrompt)
-    // Drain stream BEFORE awaiting exit — exit may resolve while chunks
-    // are still queued. Sequential await guarantees all chunks reach renderer.
-    for await (const chunk of result.stream) {
+    const parser = new NarrationParser()
+
+    const emit = (p: {
+      stream: LogChunk['stream']
+      text: string
+      thoughtKind?: 'intent' | 'findings'
+    }): void => {
       const logChunk: LogChunk = {
         id: ulid(),
         deploymentId,
         timestamp: Date.now(),
-        stream: chunk.stream,
-        text: chunk.text
+        stream: p.stream,
+        text: p.text,
+        ...(p.thoughtKind ? { thoughtKind: p.thoughtKind } : {})
       }
       if (!win.isDestroyed()) {
         win.webContents.send(IPC.LOG_STREAM, logChunk)
@@ -330,6 +336,15 @@ export async function executeDeployment(
         logChunks: [...prev.logChunks, logChunk].slice(-5000)
       }))
     }
+
+    // Drain stream BEFORE awaiting exit — exit may resolve while chunks
+    // are still queued. Sequential await guarantees all chunks reach renderer.
+    for await (const chunk of result.stream) {
+      for (const parsed of parser.feed(chunk)) emit(parsed)
+    }
+    // Flush any partial trailing line left in the parser buffers.
+    for (const parsed of parser.flush()) emit(parsed)
+
     exitCode = await result.exit
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
