@@ -6,6 +6,8 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { ClaudeRunner } from '../../src/main/runners/claude'
 import { StateManager, type StoreLike } from '../../src/main/state-manager'
+import { NarrationParser } from '../../src/main/log-narration-parser'
+import type { LogChunk } from '../../src/shared/types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -110,5 +112,71 @@ describe('deployment lifecycle (integration)', () => {
 
     expect(stdoutChunks.join('')).toContain('progress: 50%')
     expect(stderrChunks.join('')).toContain('warning')
+  })
+
+  it('classifies [INTENT] and [FINDINGS] markers as thought LogChunks end-to-end', async () => {
+    // Scripted runner emits a realistic narration sequence mirroring
+    // what Kimi produces with --narrate: intent → tool call → findings.
+    const fakeChild = new EventEmitter() as EventEmitter & {
+      stdout: Readable
+      stderr: Readable
+      kill: ReturnType<typeof vi.fn>
+    }
+    fakeChild.stdout = Readable.from(['Done.\n'])
+    fakeChild.stderr = Readable.from([
+      '[INTENT] Exploring the repo.\n',
+      '  -> read_file({"path":"package.json"})\n',
+      '[FINDINGS] Electron + Vite project.\n'
+    ])
+    fakeChild.kill = vi.fn()
+
+    const runner = new ClaudeRunner({
+      which: async () => '/fake/claude',
+      spawnProcess: (() => fakeChild) as never
+    })
+
+    const result = await runner.spawn('/tmp', 'noop')
+    setTimeout(() => fakeChild.emit('close', 0), 10)
+    setTimeout(() => fakeChild.emit('exit', 0), 11)
+
+    // Replicate the ipc.ts deploy loop: route chunks through
+    // NarrationParser and accumulate classified LogChunks.
+    const parser = new NarrationParser()
+    const emitted: Array<Pick<LogChunk, 'stream' | 'text' | 'thoughtKind'>> = []
+    for await (const chunk of result.stream) {
+      for (const parsed of parser.feed(chunk)) {
+        emitted.push({
+          stream: parsed.stream,
+          text: parsed.text,
+          ...(parsed.thoughtKind ? { thoughtKind: parsed.thoughtKind } : {})
+        })
+      }
+    }
+    for (const parsed of parser.flush()) {
+      emitted.push({
+        stream: parsed.stream,
+        text: parsed.text,
+        ...(parsed.thoughtKind ? { thoughtKind: parsed.thoughtKind } : {})
+      })
+    }
+    expect(await result.exit).toBe(0)
+
+    const intent = emitted.find((c) => c.stream === 'thought' && c.thoughtKind === 'intent')
+    const findings = emitted.find((c) => c.stream === 'thought' && c.thoughtKind === 'findings')
+
+    expect(intent).toBeDefined()
+    expect(intent!.text).toBe('Exploring the repo.\n')
+    expect(findings).toBeDefined()
+    expect(findings!.text).toBe('Electron + Vite project.\n')
+
+    // Raw tool-call line still present on stderr (not reclassified).
+    expect(
+      emitted.find((c) => c.stream === 'stderr' && c.text.includes('read_file'))
+    ).toBeDefined()
+
+    // Final stdout not lost.
+    expect(
+      emitted.find((c) => c.stream === 'stdout' && c.text.includes('Done.'))
+    ).toBeDefined()
   })
 })
