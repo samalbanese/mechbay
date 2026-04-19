@@ -15,6 +15,7 @@ interface LogLine {
   deploymentId?: string
   isSeparator?: boolean
   deploymentLabel?: string
+  thoughtKind?: 'intent' | 'findings'
 }
 
 const MAX_VISIBLE_LOGS = 500
@@ -60,6 +61,7 @@ export function LogPane({ logs, deployments = [] }: LogPaneProps): React.JSX.Ele
         text: log.text,
         timestamp: log.timestamp,
         deploymentId: log.deploymentId,
+        thoughtKind: log.thoughtKind,
       })
 
       lastDeploymentId = log.deploymentId
@@ -192,6 +194,19 @@ function LogLineComponent({ line }: { line: LogLine }): React.JSX.Element {
     )
   }
 
+  if (line.stream === 'thought') {
+    const isIntent = line.thoughtKind === 'intent'
+    const cardStyle = isIntent ? intentCardStyle : findingsCardStyle
+    const tagColor = isIntent ? colors.cyan : colors.amber
+    const tagText = isIntent ? '▸ INTENT' : '◆ FINDINGS'
+    return (
+      <div style={cardStyle} role="status" aria-label={`${line.thoughtKind} narration`}>
+        <div style={{ ...thoughtTagStyle, color: tagColor }}>{tagText}</div>
+        <div style={thoughtBodyStyle}>{line.text}</div>
+      </div>
+    )
+  }
+
   const streamColor = getStreamColor(line.stream)
 
   return (
@@ -210,6 +225,9 @@ function getStreamColor(stream: LogChunk['stream']): string {
       return colors.streamStderr
     case 'system':
       return colors.streamSystem
+    case 'thought':
+      // Defensive fallback — thought lines render via the card path above.
+      return colors.cyan
     default:
       return colors.textSecondary
   }
@@ -320,4 +338,34 @@ const jumpButtonStyle: React.CSSProperties = {
   fontFamily: type.mono,
   boxShadow: `0 2px 8px ${colors.amberGlow}`,
   zIndex: 10,
+}
+
+const intentCardStyle: React.CSSProperties = {
+  borderLeft: `3px solid ${colors.cyan}`,
+  background: colors.cyanTint,
+  padding: 8,
+  margin: '6px 0',
+}
+
+const findingsCardStyle: React.CSSProperties = {
+  borderLeft: `3px solid ${colors.amber}`,
+  background: colors.amberTint,
+  padding: 8,
+  margin: '6px 0',
+}
+
+const thoughtTagStyle: React.CSSProperties = {
+  fontSize: 10,
+  textTransform: 'uppercase',
+  letterSpacing: '0.1em',
+  fontWeight: 'bold',
+  marginBottom: 4,
+}
+
+const thoughtBodyStyle: React.CSSProperties = {
+  color: colors.textPrimary,
+  fontSize: 12,
+  lineHeight: 1.5,
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word',
 }
