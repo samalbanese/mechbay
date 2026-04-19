@@ -28,6 +28,10 @@ export const colors = {
   orangeGlow: 'rgba(232, 95, 0, 0.4)',
   amber: '#ffcc33',
   amberGlow: 'rgba(255, 204, 51, 0.4)',
+  amberTint: 'rgba(255, 204, 51, 0.08)',
+  cyan: '#00f0ff',
+  cyanGlow: 'rgba(0, 240, 255, 0.4)',
+  cyanTint: 'rgba(0, 240, 255, 0.08)',
 
   // Stream colors
   streamStdout: '#9dd98a',
