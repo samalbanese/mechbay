@@ -80,8 +80,16 @@ export interface LogChunk {
   id: string
   deploymentId: string
   timestamp: number
-  stream: 'stdout' | 'stderr' | 'system'
+  stream: 'stdout' | 'stderr' | 'system' | 'thought'
   text: string
+  /**
+   * Set iff `stream === 'thought'`. Lets the renderer distinguish
+   * forward-looking intent cards from backward-looking findings cards
+   * without re-parsing the text prefix. Optional so persisted LogChunks
+   * from older sessions don't need migration — non-thought streams
+   * simply omit it.
+   */
+  thoughtKind?: 'intent' | 'findings'
 }
 
 /**
