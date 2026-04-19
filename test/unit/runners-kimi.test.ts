@@ -9,8 +9,9 @@ import { KimiRunner } from '../../src/main/runners/kimi'
  *
  * These tests lock in:
  *   1. isAvailable() probes `python` on PATH
- *   2. argv is `[<scriptPath>, '-', '-v']` — the trailing '-' tells
- *      the wrapper to read the prompt from stdin
+ *   2. argv is `[<scriptPath>, '-', '-v', '--narrate']` — the trailing
+ *      '-' tells the wrapper to read the prompt from stdin; '--narrate'
+ *      opts into the [INTENT]/[FINDINGS] chain-of-thought narration
  *   3. the prompt is actually piped to child.stdin and stdin is closed
  *   4. EPIPE on stdin doesn't throw — the child's exit event is the
  *      canonical error surface
@@ -58,7 +59,7 @@ describe('KimiRunner (Fireworks wrapper)', () => {
     expect(probed).toEqual(['python'])
   })
 
-  it('invokes python with the script path, `-` (stdin sentinel), and `-v` (verbose)', async () => {
+  it('invokes python with the script path, `-` (stdin sentinel), `-v`, and `--narrate`', async () => {
     const spawnCalls: Array<[string, string[]]> = []
     const child = makeFakeChild()
     const runner = new KimiRunner({
@@ -71,7 +72,7 @@ describe('KimiRunner (Fireworks wrapper)', () => {
     })
 
     await runner.spawn('/tmp/workdir', 'Explore this project and summarize it.')
-    expect(spawnCalls).toEqual([['python', [SCRIPT, '-', '-v']]])
+    expect(spawnCalls).toEqual([['python', [SCRIPT, '-', '-v', '--narrate']]])
   })
 
   it('pipes the full prompt to stdin and closes it', async () => {

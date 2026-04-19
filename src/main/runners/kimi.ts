@@ -10,12 +10,14 @@ export interface KimiRunnerDeps extends Partial<CliRunnerDeps> {
 
 /**
  * Moonshot Kimi via the Fireworks AI API — invoked as:
- *   python <scriptPath> - -v
+ *   python <scriptPath> - -v --narrate
  *
  * The prompt is piped via stdin (the trailing `-` argument tells the
- * wrapper to read from stdin). The `-v` flag makes the wrapper emit
- * each tool call to stderr so the LIVE LOG panel surfaces real-time
- * agent activity ("reading soul.md... running npm test...").
+ * wrapper to read from stdin). The `-v` flag emits tool-call lines to
+ * stderr for the LIVE LOG panel. `--narrate` instructs Kimi to produce
+ * `[INTENT]` lines before tool calls and `[FINDINGS]` reflections at
+ * subtask boundaries so NarrationParser can render them as thought
+ * cards.
  *
  * Why Fireworks and not the native `kimi` CLI:
  *   1. Uncapped usage vs. the native CLI's membership-gated quota.
@@ -42,7 +44,7 @@ export class KimiRunner extends CliRunner {
   }
 
   protected buildArgs(_prompt: string): string[] {
-    return [this.scriptPath, '-', '-v']
+    return [this.scriptPath, '-', '-v', '--narrate']
   }
 
   protected stdinInput(prompt: string): string | null {
