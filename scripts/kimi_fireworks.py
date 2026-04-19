@@ -47,6 +47,16 @@ DEFAULT_MODEL = "accounts/fireworks/routers/kimi-k2p5-turbo"
 ENV_FILE = Path.home() / ".claude" / "env" / "personal.env"
 API_KEY_ENV = "FIREWORKS_API_KEY"
 
+NARRATION_DIRECTIVE = (
+    "You are being watched by an operator through a live log. "
+    "Before using tools, briefly state your immediate intent in one sentence, "
+    "prefixed with [INTENT]. After a batch of roughly 3-5 tool calls, or when "
+    "you reach a natural subtask boundary, emit a one-sentence reflection "
+    "prefixed with [FINDINGS]. Keep each bullet to a single line — no multi-line "
+    "paragraphs. These bullets are for the operator's narrative view; do not "
+    "describe the bullet system itself, just use it."
+)
+
 # Directories to skip during file searches
 SKIP_DIRS = {
     ".git", "node_modules", "__pycache__", ".next", ".cache", "dist",
@@ -628,11 +638,19 @@ def agent_loop(
     max_tokens=16384,
     verbose=False,
     use_tools=True,
+    narrate=False,
 ):
     """Run the agentic loop until the model produces a final text response."""
     messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
+    effective_system = system_prompt
+    if narrate:
+        effective_system = (
+            f"{system_prompt}\n\n{NARRATION_DIRECTIVE}"
+            if system_prompt
+            else NARRATION_DIRECTIVE
+        )
+    if effective_system:
+        messages.append({"role": "system", "content": effective_system})
     messages.append({"role": "user", "content": prompt})
 
     tools = TOOLS if use_tools else None
@@ -653,6 +671,18 @@ def agent_loop(
         tool_calls = msg.get("tool_calls")
         if not tool_calls:
             return msg.get("content", "")
+
+        # When --narrate is active, surface the model's pre-tool-call
+        # reasoning. Without narration, this content is silently
+        # discarded (we only return final content when there are NO
+        # tool calls).
+        if narrate:
+            content = (msg.get("content") or "").strip()
+            if content:
+                for line in content.splitlines():
+                    stripped = line.strip()
+                    if stripped:
+                        print(stripped, file=sys.stderr)
 
         # Execute each tool call
         for tc in tool_calls:
@@ -699,6 +729,15 @@ def main():
     parser.add_argument("--temperature", type=float, default=0.3, help="Temperature (default: 0.3)")
     parser.add_argument("--max-tokens", type=int, default=16384, help="Max tokens per response (default: 16384, streamed transparently)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Print tool calls to stderr")
+    parser.add_argument(
+        "--narrate",
+        action="store_true",
+        help=(
+            "Emit intent/findings narration to stderr. Appends a short directive "
+            "to the system prompt and prints the model's pre-tool-call content so "
+            "the operator can follow the agent's reasoning. Default: off."
+        ),
+    )
     parser.add_argument("--no-tools", action="store_true", help="Disable tools (prompt -> response only)")
     parser.add_argument("--model", default=DEFAULT_MODEL, help="Override model name")
 
@@ -728,6 +767,7 @@ def main():
         max_tokens=args.max_tokens,
         verbose=args.verbose,
         use_tools=not args.no_tools,
+        narrate=args.narrate,
     )
 
     print(result)
