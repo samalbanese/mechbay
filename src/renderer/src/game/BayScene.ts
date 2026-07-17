@@ -3,6 +3,7 @@ import type { AppState, Deployment, FacilityType, MechClass } from '../../../sha
 import { bus } from '../bus'
 import { colors, type } from '../theme'
 import { computeFacingFlipX, computeWalkBob, computeWalkFrame } from './bay-animation'
+import { computeDeploymentActions } from './deployment-transitions'
 
 import atlasUrl from '../../../../assets/mechs/atlas-poc.png?url'
 import marauderUrl from '../../../../assets/mechs/marauder-poc.png?url'
@@ -119,6 +120,15 @@ export class BayScene extends Phaser.Scene {
   private workLightTweens = new Map<string, Phaser.Tweens.Tween>()
   private facilityBeacons = new Map<string, Phaser.GameObjects.Image>()
   private facilityBeaconTweens = new Map<string, Phaser.Tweens.Tween>()
+  private activeWalks = new Map<
+    string,
+    {
+      tween: Phaser.Tweens.Tween
+      promise: Promise<void>
+      resolve: () => void
+      cancelled: boolean
+    }
+  >()
 
   constructor() {
     super('BayScene')
@@ -377,6 +387,7 @@ export class BayScene extends Phaser.Scene {
     // Remove sprites for entities no longer in state (e.g., decommissioned facility)
     for (const [id, sprite] of this.mechSprites) {
       if (!this.state.companions.some((c) => c.id === id)) {
+        this.cancelActiveWalk(id)
         sprite.destroy()
         this.mechSprites.delete(id)
         this.unavailableLabels.get(id)?.destroy()
@@ -441,6 +452,7 @@ export class BayScene extends Phaser.Scene {
    * tween over sprite.y every frame.
    */
   walkTo(companionId: string, targetTile: { x: number; y: number }): Promise<void> {
+    this.cancelActiveWalk(companionId)
     const sprite = this.mechSprites.get(companionId)
     if (!sprite) return Promise.resolve()
     const target = isoToScreen(targetTile)
@@ -468,41 +480,73 @@ export class BayScene extends Phaser.Scene {
     if (useWalkFrames) this.applyMechTexture(sprite, walkKey, 0)
 
     const progress = { t: 0 }
-    return new Promise<void>((resolve) => {
-      this.tweens.add({
-        targets: progress,
-        t: 1,
-        duration: 1500,
-        ease: 'Sine.easeInOut',
-        onUpdate: (tween) => {
-          sprite.x = Phaser.Math.Linear(startX, target.x, progress.t)
-          const baseY = Phaser.Math.Linear(startY, targetY, progress.t)
-          if (this.reducedMotion) {
-            sprite.y = baseY
-            return
-          }
-          if (useWalkFrames) {
-            const frame = computeWalkFrame(tween.elapsed)
-            if (frame !== currentFrame) {
-              currentFrame = frame
-              sprite.setFrame(frame)
-            }
-          }
-          const bob = computeWalkBob(tween.elapsed)
-          sprite.y = baseY + bob.yOffset
-          sprite.angle = bob.angleDeg
-        },
-        onComplete: () => {
-          sprite.x = target.x
-          sprite.y = targetY
-          sprite.angle = 0
-          if (useWalkFrames && mechClass) this.applyMechTexture(sprite, MECH_KEY[mechClass])
-          this.stopFootDust(companionId)
-          this.playArrivalBurst(companionId, sprite)
-          resolve()
-        }
-      })
+    let resolveWalk!: () => void
+    const promise = new Promise<void>((resolve) => {
+      resolveWalk = resolve
     })
+    let tween!: Phaser.Tweens.Tween
+    tween = this.tweens.add({
+      targets: progress,
+      t: 1,
+      duration: 1500,
+      ease: 'Sine.easeInOut',
+      onUpdate: (tween) => {
+        sprite.x = Phaser.Math.Linear(startX, target.x, progress.t)
+        const baseY = Phaser.Math.Linear(startY, targetY, progress.t)
+        if (this.reducedMotion) {
+          sprite.y = baseY
+          return
+        }
+        if (useWalkFrames) {
+          const frame = computeWalkFrame(tween.elapsed)
+          if (frame !== currentFrame) {
+            currentFrame = frame
+            sprite.setFrame(frame)
+          }
+        }
+        const bob = computeWalkBob(tween.elapsed)
+        sprite.y = baseY + bob.yOffset
+        sprite.angle = bob.angleDeg
+      },
+      onComplete: () => {
+        sprite.x = target.x
+        sprite.y = targetY
+        sprite.angle = 0
+        if (useWalkFrames && mechClass) this.applyMechTexture(sprite, MECH_KEY[mechClass])
+        this.stopFootDust(companionId)
+        this.playArrivalBurst(companionId, sprite)
+        if (this.activeWalks.get(companionId)?.tween === tween) {
+          this.activeWalks.delete(companionId)
+        }
+        resolveWalk()
+      }
+    })
+    this.activeWalks.set(companionId, {
+      tween,
+      promise,
+      resolve: resolveWalk,
+      cancelled: false
+    })
+    return promise
+  }
+
+  private cancelActiveWalk(companionId: string): void {
+    const activeWalk = this.activeWalks.get(companionId)
+    if (!activeWalk) return
+    activeWalk.cancelled = true
+    activeWalk.tween.stop()
+    this.activeWalks.delete(companionId)
+    this.stopFootDust(companionId)
+
+    const sprite = this.mechSprites.get(companionId)
+    const mechClass = sprite?.getData('mechClass') as MechClass | undefined
+    if (sprite) {
+      if (mechClass && sprite.texture.key === MECH_WALK_KEY[mechClass]) {
+        this.applyMechTexture(sprite, MECH_KEY[mechClass])
+      }
+      sprite.angle = 0
+    }
+    activeWalk.resolve()
   }
 
   /**
@@ -904,6 +948,10 @@ export class BayScene extends Phaser.Scene {
    * Electron-single-scene app, but trivial to get right).
    */
   shutdown(): void {
+    for (const companionId of [...this.activeWalks.keys()]) {
+      this.cancelActiveWalk(companionId)
+    }
+    this.activeWalks.clear()
     for (const smoke of this.smokeEmitters.values()) {
       smoke.destroy()
     }
@@ -937,42 +985,54 @@ export class BayScene extends Phaser.Scene {
   }
 
   /**
-   * Diff two state snapshots and trigger animations for deployment
-   * status transitions (idle → walking-to, completed/cancelled → returning,
-   * any → failed).
+   * Diff two state snapshots and trigger animations for deployment status
+   * transitions. The diff itself is pure (`computeDeploymentActions`) so it
+   * can be unit-tested without Phaser; this method just maps actions onto
+   * scene effects. Brand-new deployments count as transitions — they are
+   * BORN in 'walking-to', so skipping them means mechs never walk (the
+   * v1.2.1-and-earlier bug).
    */
   private reactToDeploymentTransitions(prev: AppState, next: AppState): void {
-    for (const dep of next.deployments) {
-      const prevDep = prev.deployments.find((d) => d.id === dep.id)
-      if (!prevDep) continue
-
-      if (dep.status === 'walking-to' && prevDep.status !== 'walking-to') {
-        const facility = next.facilities.find((f) => f.id === dep.facilityId)
-        if (facility) void this.walkTo(dep.companionId, facility.tile)
-      }
-
-      if (dep.status === 'failed' && prevDep.status !== 'failed') {
-        this.applyDeadInField(dep.companionId)
-      }
-
-      if (dep.status === 'working' && prevDep.status !== 'working') {
-        this.startWorkingState(dep.companionId, dep.facilityId)
-      }
-      if (dep.status !== 'working' && prevDep.status === 'working') {
-        this.stopWorkingState(dep.companionId, dep.facilityId)
-      }
-
-      if (dep.status === 'completed' && prevDep.status === 'working') {
-        this.showCompletionBubble(dep.companionId, dep)
-      }
-
-      if (
-        (dep.status === 'completed' || dep.status === 'cancelled') &&
-        prevDep.status !== 'completed' &&
-        prevDep.status !== 'cancelled'
-      ) {
-        const companion = next.companions.find((c) => c.id === dep.companionId)
-        if (companion) void this.walkTo(dep.companionId, companion.homeTile)
+    const actions = computeDeploymentActions(prev.deployments, next.deployments)
+    for (const action of actions) {
+      switch (action.kind) {
+        case 'walk-to-facility': {
+          const facility = next.facilities.find((candidate) => candidate.id === action.facilityId)
+          if (facility) void this.walkTo(action.companionId, facility.tile)
+          break
+        }
+        case 'start-working': {
+          const activeWalk = this.activeWalks.get(action.companionId)
+          if (activeWalk) {
+            void activeWalk.promise.then(() => {
+              if (!activeWalk.cancelled) {
+                this.startWorkingState(action.companionId, action.facilityId)
+              }
+            })
+          } else {
+            this.startWorkingState(action.companionId, action.facilityId)
+          }
+          break
+        }
+        case 'stop-working':
+          this.stopWorkingState(action.companionId, action.facilityId)
+          break
+        case 'dead-in-field':
+          this.cancelActiveWalk(action.companionId)
+          this.applyDeadInField(action.companionId)
+          break
+        case 'completion-bubble': {
+          const deployment = next.deployments.find(
+            (candidate) => candidate.id === action.deploymentId
+          )
+          if (deployment) this.showCompletionBubble(action.companionId, deployment)
+          break
+        }
+        case 'walk-home': {
+          const companion = next.companions.find((candidate) => candidate.id === action.companionId)
+          if (companion) void this.walkTo(action.companionId, companion.homeTile)
+          break
+        }
       }
     }
   }

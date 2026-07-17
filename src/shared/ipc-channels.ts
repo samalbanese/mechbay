@@ -12,6 +12,7 @@ export const IPC = {
   FS_READ_DIR: 'mechbay:fs:readDir',
   FS_READ_FILE: 'mechbay:fs:readFile',
   FACILITY_ADD_FROM_PICKER: 'mechbay:facility:addFromPicker',
+  FACILITY_LINK: 'mechbay:facility:link',
   SCAN_PROJECTS: 'mechbay:scan:projects',
   CLI_RESCAN: 'mechbay:cli:rescan',
   RECOVERY_ZOMBIES: 'mechbay:recovery:zombies',

@@ -46,6 +46,8 @@ const mechbayApi = {
     ipcRenderer.invoke(IPC.FS_READ_FILE, { path: p }),
   addFacilityFromPicker: (tile: { x: number; y: number }): Promise<Facility | null> =>
     ipcRenderer.invoke(IPC.FACILITY_ADD_FROM_PICKER, { tile }),
+  linkFacility: (facilityId: string): Promise<Facility | null> =>
+    ipcRenderer.invoke(IPC.FACILITY_LINK, { facilityId }),
   // Soul/Memory IPC for Journal tab
   soulRead: (companionId: string): Promise<SoulReadResult> =>
     ipcRenderer.invoke(IPC.SOUL_READ, { companionId }),

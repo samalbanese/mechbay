@@ -35,6 +35,7 @@ function App(): React.JSX.Element {
   const sceneRef = useRef<BayScene | null>(null)
   const gameRef = useRef<Phaser.Game | null>(null)
   const previousStateRef = useRef<AppState | null>(null)
+  const latestStateRef = useRef<AppState | null>(null)
 
   // Subscribe to IPC state + log chunks
   useEffect(() => {
@@ -42,6 +43,7 @@ function App(): React.JSX.Element {
       .getState()
       .then((initialState) => {
         previousStateRef.current = initialState
+        latestStateRef.current = initialState
         setState(initialState)
       })
       .catch((e) => setError(String(e)))
@@ -66,6 +68,7 @@ function App(): React.JSX.Element {
         }
       }
       previousStateRef.current = nextState
+      latestStateRef.current = nextState
       setState(nextState)
     })
     const offRecovery = window.mechbay.onRecoveryZombies((zombies) => setRecoveryZombies(zombies))
@@ -107,8 +110,26 @@ function App(): React.JSX.Element {
       }
     }
     const offFacility = (payload: { facilityId: string }): void => {
-      setBrowsingFacilityId(payload.facilityId)
-      setActiveTab('files')
+      const facility = latestStateRef.current?.facilities.find(
+        (candidate) => candidate.id === payload.facilityId
+      )
+      if (!facility) return
+      if (facility.path) {
+        setBrowsingFacilityId(facility.id)
+        setActiveTab('files')
+        return
+      }
+      window.mechbay
+        .linkFacility(facility.id)
+        .then((linkedFacility) => {
+          if (linkedFacility) {
+            setBrowsingFacilityId(linkedFacility.id)
+            setActiveTab('files')
+          }
+        })
+        .catch((e) =>
+          alert(`Could not link building: ${e instanceof Error ? e.message : String(e)}`)
+        )
     }
     const offEmptyTile = (payload: { tile: { x: number; y: number } }): void => {
       window.mechbay

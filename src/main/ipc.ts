@@ -108,6 +108,32 @@ export function registerIpc(opts: IpcDeps): void {
     }
   )
 
+  ipcMain.handle(
+    IPC.FACILITY_LINK,
+    async (_e, args: { facilityId: string }): Promise<Facility | null> => {
+      const facility = state
+        .getState()
+        .facilities.find((candidate) => candidate.id === args.facilityId)
+      if (!facility) throw new Error(`Facility not found: ${args.facilityId}`)
+      if (facility.path) return facility
+
+      const result = await dialog.showOpenDialog(win, {
+        title: 'Link a project directory',
+        properties: ['openDirectory']
+      })
+      if (result.canceled || result.filePaths.length === 0) return null
+
+      const linked = { ...facility, path: result.filePaths[0] }
+      state.updateState((prev) => ({
+        ...prev,
+        facilities: prev.facilities.map((candidate) =>
+          candidate.id === linked.id ? linked : candidate
+        )
+      }))
+      return linked
+    }
+  )
+
   // Broadcast every state change to renderer.
   state.on('stateChanged', (s) => {
     if (!win.isDestroyed()) {
@@ -152,7 +178,7 @@ export function registerIpc(opts: IpcDeps): void {
       if (!facility) throw new Error(`Facility not found: ${args.facilityId}`)
       if (!facility.path) {
         throw new Error(
-          `${facility.name} isn't linked to a project folder yet — use BULK IMPORT (top bar) or click an empty tile to place a facility linked to a real project.`
+          `${facility.name} isn't linked to a project folder yet — click the building to link it to a project directory, or use BULK IMPORT (top bar).`
         )
       }
 
@@ -225,10 +251,10 @@ export function registerIpc(opts: IpcDeps): void {
     async (_e, payload: BulkImportRunPayload): Promise<BulkImportRunResult> => {
       const s = state.getState()
       const importedFacilities: Facility[] = []
+      const occupied = new Set(s.facilities.map((f) => `${f.tile.x},${f.tile.y}`))
 
       for (const projectPath of payload.selectedPaths) {
         // Find an empty tile
-        const occupied = new Set(s.facilities.map((f) => `${f.tile.x},${f.tile.y}`))
         let emptyTile: { x: number; y: number } | null = null
         for (let y = 0; y < GRID_H && !emptyTile; y++) {
           for (let x = 0; x < GRID_W && !emptyTile; x++) {

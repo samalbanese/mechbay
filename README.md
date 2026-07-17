@@ -17,7 +17,7 @@ MechBay is an Electron desktop app for deploying real coding agents as mech-clas
 - Captures a Mission Debrief after every run: changed files, insertions, deletions, and a per-file diff table.
 - Keeps each mech's `soul.md` and `memory.md` between deployments, with an in-app Journal for editing both.
 - Handles the rough edges: dead-in-field failure states, click-to-recover, and a crash-recovery modal on the next launch.
-- Lets you browse facility files read-only through a whitelist guard, bulk import projects, or click an empty bay tile to add a facility from a directory picker.
+- Lets you browse facility files read-only through a whitelist guard, bulk import projects, click an empty bay tile to add a facility from a directory picker, or click an unlinked starter building to connect it to a project directory.
 
 ## The mechs
 

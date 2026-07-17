@@ -15,6 +15,8 @@ import type {
 import { ulid } from '../shared/ulid'
 
 const STATE_SCHEMA_VERSION: StateSchemaVersion = 2
+const GRID_W = 16
+const GRID_H = 16
 
 interface MechSeed {
   family: AgentFamily
@@ -120,6 +122,38 @@ function isValidState(obj: unknown): obj is AppState {
   )
 }
 
+export function repairFacilityTileCollisions(state: AppState): {
+  state: AppState
+  changed: boolean
+} {
+  const seen = new Set<string>()
+  let changed = false
+  const facilities = state.facilities.map((facility) => {
+    const key = `${facility.tile.x},${facility.tile.y}`
+    if (!seen.has(key)) {
+      seen.add(key)
+      return facility
+    }
+
+    let freeTile: { x: number; y: number } | undefined
+    for (let y = 0; y < GRID_H && !freeTile; y++) {
+      for (let x = 0; x < GRID_W; x++) {
+        if (!seen.has(`${x},${y}`)) {
+          freeTile = { x, y }
+          break
+        }
+      }
+    }
+    if (!freeTile) return facility
+
+    changed = true
+    seen.add(`${freeTile.x},${freeTile.y}`)
+    return { ...facility, tile: freeTile }
+  })
+
+  return changed ? { state: { ...state, facilities }, changed } : { state, changed }
+}
+
 /**
  * StateManager — centralized application state with persistence.
  *
@@ -182,7 +216,15 @@ export class StateManager extends EventEmitter {
     try {
       const raw = store.get('state')
       if (isValidState(raw)) {
-        this.cache = raw
+        const repaired = repairFacilityTileCollisions(raw)
+        this.cache = repaired.state
+        if (repaired.changed) {
+          try {
+            store.set('state', repaired.state)
+          } catch (err) {
+            console.error('[state-manager] Store write failed during tile repair:', err)
+          }
+        }
       } else {
         this.cache = defaultState(userDataDir)
       }
