@@ -21,10 +21,16 @@ export interface SpawnResult {
   exit: Promise<number>
 }
 
+/** Optional per-spawn overrides threaded through to the runner's argv. */
+export interface RunnerSpawnOptions {
+  /** Model override passed to the runtime CLI, if it supports one. */
+  model?: string
+}
+
 export interface Runner {
   /** Check whether the underlying CLI is available on PATH. */
   isAvailable(): Promise<boolean>
 
   /** Spawn the CLI with the given cwd + prompt. Returns streams + lifecycle. */
-  spawn(cwd: string, prompt: string): Promise<SpawnResult>
+  spawn(cwd: string, prompt: string, options?: RunnerSpawnOptions): Promise<SpawnResult>
 }

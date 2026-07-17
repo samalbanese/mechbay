@@ -18,7 +18,8 @@ export const IPC = {
   SOUL_READ: 'mechbay:soul:read',
   SOUL_WRITE: 'mechbay:soul:write',
   MEMORY_READ: 'mechbay:memory:read',
-  BULK_IMPORT_RUN: 'mechbay:bulk-import:run'
+  BULK_IMPORT_RUN: 'mechbay:bulk-import:run',
+  COMPANION_CONFIGURE: 'mechbay:companion:configure'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]

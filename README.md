@@ -31,6 +31,25 @@ MechBay is an Electron desktop app for deploying real coding agents as mech-clas
 
 An unconfigured mech shows `⚠ NOT DEPLOYABLE`. The rest of the bay remains usable.
 
+## Any mech, any runtime (bring your own key)
+
+Every mech's runtime is reassignable from the UI — you're not stuck with the family it launched with. Select a mech, open its panel, and the **RUNTIME** section lets you:
+
+- Pick any of the five runtimes from a dropdown (the mech's native family is marked `— DEFAULT`).
+- Set an optional model override, passed straight through to that runtime's CLI:
+
+| Runtime | Model flag |
+| --- | --- |
+| Claude Code | `--model` |
+| Codex | `-m` |
+| Gemini CLI | `-m` |
+| Kimi (Fireworks) | `--model` |
+| Custom CLI | `{MODEL}` placeholder in `MECHBAY_HERMES_CMD` |
+
+Press **APPLY** and MechBay re-probes availability for the new runtime immediately — the availability badge updates without a restart.
+
+Auth is always the runtime's own — `claude`/`codex` login, `GEMINI_API_KEY`, `FIREWORKS_API_KEY`, or your custom CLI's own environment. MechBay never stores keys; it only remembers which runtime and model you assigned to each mech.
+
 ## Quickstart
 
 Requirements: Node.js 20+, npm, and git on `PATH` (git powers Mission Debrief). MechBay runs on Windows, macOS, and Linux; it is developed on Windows. Install at least one runtime from the table above.
@@ -54,7 +73,7 @@ MechBay checks runtime availability at startup. Install and authenticate each CL
 - **Marauder-Prime / Codex:** install the Codex CLI so `codex` runs from a terminal.
 - **Catapult-Prime / Gemini:** install Gemini CLI so `gemini` runs from a terminal.
 - **Raven-Prime / Kimi:** MechBay runs the bundled `scripts/kimi_fireworks.py` wrapper. It needs `python` on `PATH` and a Fireworks key. The wrapper gives Kimi a full agentic tool loop, and MechBay enables its `--narrate` mode automatically so Raven's `▸ INTENT` and `◆ FINDINGS` thought cards stream into the live log.
-- **Locust-Prime / bring your own agent:** set `MECHBAY_HERMES_CMD` to any CLI command line. If it contains `{PROMPT}`, MechBay substitutes the task there. Otherwise it pipes the task prompt to the command's standard input.
+- **Locust-Prime / bring your own agent:** set `MECHBAY_HERMES_CMD` to any CLI command line. If it contains `{PROMPT}`, MechBay substitutes the task there. Otherwise it pipes the task prompt to the command's standard input. If the command line also contains `{MODEL}`, MechBay substitutes the model override there when one is set; if no override is set, the `{MODEL}` token is dropped cleanly (and if the command line has no `{MODEL}` placeholder at all, any model override is simply ignored).
 
 For example, in PowerShell before starting MechBay:
 

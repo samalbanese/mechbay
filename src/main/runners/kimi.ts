@@ -70,8 +70,8 @@ export class KimiRunner extends CliRunner {
     return null
   }
 
-  protected buildArgs(_prompt: string): string[] {
-    return [this.scriptPath, '-', '-v', '--narrate']
+  protected buildArgs(_prompt: string, model?: string): string[] {
+    return [this.scriptPath, '-', '-v', '--narrate', ...(model ? ['--model', model] : [])]
   }
 
   protected stdinInput(prompt: string): string | null {

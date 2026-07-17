@@ -1,5 +1,5 @@
 import { spawn as nodeSpawn, ChildProcess } from 'child_process'
-import type { Runner, SpawnResult, RunnerChunk } from './types'
+import type { Runner, RunnerSpawnOptions, SpawnResult, RunnerChunk } from './types'
 
 /**
  * Shared plumbing for CLI-backed runners (Claude/Codex/Kimi/Gemini).
@@ -36,8 +36,8 @@ export abstract class CliRunner implements Runner {
 
   /** The executable to look up on PATH and invoke. */
   protected abstract command: string
-  /** Turn a user prompt into argv for the CLI. */
-  protected abstract buildArgs(prompt: string): string[]
+  /** Turn a user prompt (+ optional model override) into argv for the CLI. */
+  protected abstract buildArgs(prompt: string, model?: string): string[]
   /**
    * Optionally pipe content to the child's stdin and close it.
    * Default: no stdin writes — the runner relies purely on argv.
@@ -53,8 +53,11 @@ export abstract class CliRunner implements Runner {
     return (await this.which(this.command)) !== null
   }
 
-  async spawn(cwd: string, prompt: string): Promise<SpawnResult> {
-    const child = this.spawnProcess(this.command, this.buildArgs(prompt), { cwd, shell: false })
+  async spawn(cwd: string, prompt: string, options?: RunnerSpawnOptions): Promise<SpawnResult> {
+    const child = this.spawnProcess(this.command, this.buildArgs(prompt, options?.model), {
+      cwd,
+      shell: false
+    })
 
     const stdinPayload = this.stdinInput(prompt)
     if (stdinPayload !== null && child.stdin) {

@@ -112,4 +112,76 @@ describe('HermesRunner (bring-your-own agent)', () => {
       'run'
     ])
   })
+
+  describe('{MODEL} placeholder substitution', () => {
+    it('substitutes {MODEL} into argv when a model override is set', async () => {
+      process.env.MECHBAY_HERMES_CMD = 'custom-agent --message {PROMPT} --model {MODEL}'
+      const child = makeFakeChild()
+      const spawnCalls: Array<[string, string[]]> = []
+      const runner = new HermesRunner({
+        which: async () => '/fake/custom-agent',
+        spawnProcess: ((command: string, args: string[]) => {
+          spawnCalls.push([command, args])
+          return child
+        }) as never
+      })
+
+      await runner.spawn('/facility/path', 'do the thing', { model: 'my-custom-model' })
+
+      expect(spawnCalls).toEqual([
+        ['custom-agent', ['--message', 'do the thing', '--model', 'my-custom-model']]
+      ])
+    })
+
+    it('drops the {MODEL} token cleanly when no model override is set', async () => {
+      process.env.MECHBAY_HERMES_CMD = 'custom-agent --message {PROMPT} --model {MODEL}'
+      const child = makeFakeChild()
+      const spawnCalls: Array<[string, string[]]> = []
+      const runner = new HermesRunner({
+        which: async () => '/fake/custom-agent',
+        spawnProcess: ((command: string, args: string[]) => {
+          spawnCalls.push([command, args])
+          return child
+        }) as never
+      })
+
+      await runner.spawn('/facility/path', 'do the thing')
+
+      expect(spawnCalls).toEqual([['custom-agent', ['--message', 'do the thing', '--model']]])
+    })
+
+    it('ignores a model override silently when the command has no {MODEL} placeholder', async () => {
+      process.env.MECHBAY_HERMES_CMD = 'custom-agent --message {PROMPT}'
+      const child = makeFakeChild()
+      const spawnCalls: Array<[string, string[]]> = []
+      const runner = new HermesRunner({
+        which: async () => '/fake/custom-agent',
+        spawnProcess: ((command: string, args: string[]) => {
+          spawnCalls.push([command, args])
+          return child
+        }) as never
+      })
+
+      await runner.spawn('/facility/path', 'do the thing', { model: 'unused-model' })
+
+      expect(spawnCalls).toEqual([['custom-agent', ['--message', 'do the thing']]])
+    })
+
+    it('a token that is only {MODEL} disappears entirely when unset (no stray empty arg)', async () => {
+      process.env.MECHBAY_HERMES_CMD = 'custom-agent {MODEL} --message {PROMPT}'
+      const child = makeFakeChild()
+      const spawnCalls: Array<[string, string[]]> = []
+      const runner = new HermesRunner({
+        which: async () => '/fake/custom-agent',
+        spawnProcess: ((command: string, args: string[]) => {
+          spawnCalls.push([command, args])
+          return child
+        }) as never
+      })
+
+      await runner.spawn('/facility/path', 'do the thing')
+
+      expect(spawnCalls).toEqual([['custom-agent', ['--message', 'do the thing']]])
+    })
+  })
 })

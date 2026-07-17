@@ -6,7 +6,7 @@ import { CliRunner } from './base'
  */
 export class CodexRunner extends CliRunner {
   protected command = 'codex'
-  protected buildArgs(prompt: string): string[] {
-    return ['exec', prompt]
+  protected buildArgs(prompt: string, model?: string): string[] {
+    return ['exec', ...(model ? ['-m', model] : []), prompt]
   }
 }

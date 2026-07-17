@@ -9,7 +9,7 @@ import { CliRunner } from './base'
  */
 export class GeminiRunner extends CliRunner {
   protected command = 'gemini'
-  protected buildArgs(prompt: string): string[] {
-    return ['-p', prompt, '-o', 'text', '-y']
+  protected buildArgs(prompt: string, model?: string): string[] {
+    return ['-p', prompt, '-o', 'text', '-y', ...(model ? ['-m', model] : [])]
   }
 }

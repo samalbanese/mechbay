@@ -48,6 +48,15 @@ export interface Companion {
   soulPath: string
   memoryPath: string
   lastMemoryUpdateAt?: number
+  /**
+   * Runtime override — which agent family this companion actually
+   * deploys with. Undefined means "use `family`". Optional so old
+   * persisted state (pre-runtime-reassignment) stays valid without a
+   * schema bump.
+   */
+  runtime?: AgentFamily
+  /** Optional model override passed through to the runtime CLI. */
+  model?: string
 }
 
 export interface Facility {
@@ -151,6 +160,18 @@ export interface DiscoveredProject {
 /** Result for BULK_IMPORT_RUN IPC call. */
 export type BulkImportRunResult =
   | { ok: true; imported: number; facilities: Facility[] }
+  | { ok: false; error: string }
+
+/** Payload for COMPANION_CONFIGURE IPC call. */
+export interface CompanionConfigurePayload {
+  companionId: string
+  runtime: AgentFamily
+  model?: string
+}
+
+/** Result for COMPANION_CONFIGURE IPC call. */
+export type CompanionConfigureResult =
+  | { ok: true; cliAvailable: boolean }
   | { ok: false; error: string }
 
 export interface AppState {

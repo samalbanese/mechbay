@@ -1,7 +1,8 @@
-import { ipcMain, BrowserWindow, dialog } from 'electron'
+import { app, ipcMain, BrowserWindow, dialog } from 'electron'
 import path from 'path'
 import { IPC } from '../shared/ipc-channels'
 import type {
+  AgentFamily,
   Companion,
   Deployment,
   DeploymentStatus,
@@ -14,7 +15,9 @@ import type {
   MemoryReadPayload,
   MemoryReadResult,
   BulkImportRunPayload,
-  BulkImportRunResult
+  BulkImportRunResult,
+  CompanionConfigurePayload,
+  CompanionConfigureResult
 } from '../shared/types'
 import type { StateManager } from './state-manager'
 import type { Runner } from './runners/types'
@@ -38,7 +41,7 @@ const GRID_H = 16
 export interface IpcDeps {
   win: BrowserWindow
   state: StateManager
-  runners: Record<string, Runner>
+  runners: Record<AgentFamily, Runner>
   fsReader: FsReader
 }
 
@@ -47,7 +50,7 @@ const FS_DIR_IGNORE = ['node_modules', '.git', 'dist', 'build', '.next', '.turbo
 const ACTIVE_STATUSES: DeploymentStatus[] = ['walking-to', 'working', 'awaiting-input', 'returning']
 
 export function registerIpc(opts: IpcDeps): void {
-  const { win, state, fsReader } = opts
+  const { win, state, runners, fsReader } = opts
 
   // Filesystem: whitelist-guarded read-only access for the File Browser.
   // Handlers simply delegate to FsReader; all security lives there.
@@ -188,22 +191,26 @@ export function registerIpc(opts: IpcDeps): void {
     }
   )
 
-  // Soul/Memory read/write handlers for Journal tab
+  // Soul/Memory read/write handlers for Journal tab. Pass the SAME base
+  // dir the StateManager seeded companion.soulPath/memoryPath with —
+  // soul-memory's default (os.homedir()) resolves to a different tree
+  // than boot scaffolding, so omitting it splits Journal reads/writes
+  // from the files deployments actually inject.
   ipcMain.handle(IPC.SOUL_READ, async (_e, payload: SoulReadPayload): Promise<SoulReadResult> => {
-    return readSoul(payload.companionId)
+    return readSoul(payload.companionId, app.getPath('userData'))
   })
 
   ipcMain.handle(
     IPC.SOUL_WRITE,
     async (_e, payload: SoulWritePayload): Promise<SoulWriteResult> => {
-      return writeSoul(payload.companionId, payload.content)
+      return writeSoul(payload.companionId, payload.content, app.getPath('userData'))
     }
   )
 
   ipcMain.handle(
     IPC.MEMORY_READ,
     async (_e, payload: MemoryReadPayload): Promise<MemoryReadResult> => {
-      return readMemory(payload.companionId)
+      return readMemory(payload.companionId, app.getPath('userData'))
     }
   )
 
@@ -255,6 +262,44 @@ export function registerIpc(opts: IpcDeps): void {
       return { ok: true, imported: importedFacilities.length, facilities: importedFacilities }
     }
   )
+
+  // Runtime reassignment: let the user point a companion at a different
+  // agent family (and optionally override the model) without touching
+  // its `family` identity — `family` stays the mech's "native" runtime
+  // for display purposes, `runtime` is the effective one.
+  ipcMain.handle(
+    IPC.COMPANION_CONFIGURE,
+    async (_e, payload: CompanionConfigurePayload): Promise<CompanionConfigureResult> => {
+      const { companionId, runtime } = payload
+      const model = payload.model?.trim() || undefined
+
+      const s = state.getState()
+      const companion = s.companions.find((c) => c.id === companionId)
+      if (!companion) {
+        return { ok: false, error: `Companion not found: ${companionId}` }
+      }
+      if (!(runtime in runners)) {
+        return { ok: false, error: `Unknown runtime: ${runtime}` }
+      }
+
+      let cliAvailable: boolean
+      try {
+        cliAvailable = await runners[runtime].isAvailable()
+      } catch (err) {
+        console.warn(`[ipc] isAvailable() threw for runtime ${runtime}:`, err)
+        cliAvailable = false
+      }
+
+      state.updateState((prev) => ({
+        ...prev,
+        companions: prev.companions.map((c) =>
+          c.id === companionId ? { ...c, runtime, model, cliAvailable } : c
+        )
+      }))
+
+      return { ok: true, cliAvailable }
+    }
+  )
 }
 
 export async function executeDeployment(
@@ -265,7 +310,8 @@ export async function executeDeployment(
   opts: IpcDeps
 ): Promise<void> {
   const { win, state, runners } = opts
-  const runner = runners[companion.family]
+  const effectiveRuntime = companion.runtime ?? companion.family
+  const runner = runners[effectiveRuntime]
   if (!runner) {
     state.updateState((prev) => ({
       ...prev,
@@ -275,7 +321,7 @@ export async function executeDeployment(
               ...d,
               status: 'failed',
               completedAt: Date.now(),
-              summary: `No runner registered for family: ${companion.family}`
+              summary: `No runner registered for runtime: ${effectiveRuntime}`
             }
           : d
       )
@@ -311,7 +357,7 @@ export async function executeDeployment(
       )
     }))
 
-    const result = await runner.spawn(facility.path, fullPrompt)
+    const result = await runner.spawn(facility.path, fullPrompt, { model: companion.model })
     const parser = new NarrationParser()
 
     const emit = (p: {

@@ -12,7 +12,9 @@ import type {
   SoulWriteResult,
   MemoryReadResult,
   BulkImportRunResult,
-  DiscoveredProject
+  DiscoveredProject,
+  CompanionConfigurePayload,
+  CompanionConfigureResult
 } from '../shared/types'
 
 const mechbayApi = {
@@ -55,7 +57,10 @@ const mechbayApi = {
   scanProjects: (rootDir?: string): Promise<DiscoveredProject[]> =>
     ipcRenderer.invoke(IPC.SCAN_PROJECTS, rootDir),
   bulkImportRun: (selectedPaths: string[]): Promise<BulkImportRunResult> =>
-    ipcRenderer.invoke(IPC.BULK_IMPORT_RUN, { selectedPaths })
+    ipcRenderer.invoke(IPC.BULK_IMPORT_RUN, { selectedPaths }),
+  // Runtime reassignment IPC
+  configureCompanion: (payload: CompanionConfigurePayload): Promise<CompanionConfigureResult> =>
+    ipcRenderer.invoke(IPC.COMPANION_CONFIGURE, payload)
 }
 
 export type MechBayApi = typeof mechbayApi

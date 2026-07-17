@@ -7,7 +7,7 @@ export type { CliRunnerDeps as ClaudeRunnerDeps } from './base'
  */
 export class ClaudeRunner extends CliRunner {
   protected command = 'claude'
-  protected buildArgs(prompt: string): string[] {
-    return ['-p', prompt]
+  protected buildArgs(prompt: string, model?: string): string[] {
+    return ['-p', prompt, ...(model ? ['--model', model] : [])]
   }
 }

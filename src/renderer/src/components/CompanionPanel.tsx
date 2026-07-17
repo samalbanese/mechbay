@@ -1,6 +1,20 @@
-import { useMemo } from 'react'
-import type { Companion, Deployment, DeploymentStatus, Facility } from '../../../shared/types'
+import { useMemo, useState } from 'react'
+import type {
+  AgentFamily,
+  Companion,
+  Deployment,
+  DeploymentStatus,
+  Facility
+} from '../../../shared/types'
 import { colors, type } from '../theme'
+
+const RUNTIME_OPTIONS: Array<{ value: AgentFamily; label: string }> = [
+  { value: 'claude', label: 'CLAUDE CODE' },
+  { value: 'codex', label: 'CODEX' },
+  { value: 'gemini', label: 'GEMINI CLI' },
+  { value: 'kimi', label: 'KIMI (FIREWORKS)' },
+  { value: 'hermes', label: 'CUSTOM CLI' }
+]
 
 interface CompanionPanelProps {
   companion: Companion | null
@@ -83,6 +97,9 @@ export function CompanionPanel({ companion, deployments, facilities }: Companion
         <div style={nameStyle}>{companion.name}</div>
         <div style={metaStyle}>
           {companion.mechClass.toUpperCase()} · {companion.family}
+          {companion.runtime && companion.runtime !== companion.family
+            ? ` → ${companion.runtime}`
+            : ''}
         </div>
       </div>
 
@@ -100,6 +117,9 @@ export function CompanionPanel({ companion, deployments, facilities }: Companion
           </div>
         )}
       </div>
+
+      {/* Runtime reassignment */}
+      <RuntimeSection key={companion.id} companion={companion} />
 
       {/* Last Active */}
       <div style={lastActiveStyle}>{lastActive}</div>
@@ -135,6 +155,71 @@ function DeploymentHistoryRow({ item }: { item: DeploymentHistoryItem }): React.
         aria-label={`Status: ${item.status}`}
       />
       <span style={relativeTimeStyle}>{item.relativeTime}</span>
+    </div>
+  )
+}
+
+function RuntimeSection({ companion }: { companion: Companion }): React.JSX.Element {
+  const [runtime, setRuntime] = useState<AgentFamily>(companion.runtime ?? companion.family)
+  const [model, setModel] = useState<string>(companion.model ?? '')
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleApply = async (): Promise<void> => {
+    setPending(true)
+    setError(null)
+    try {
+      const result = await window.mechbay.configureCompanion({
+        companionId: companion.id,
+        runtime,
+        model: model.trim() || undefined
+      })
+      if (!result.ok) {
+        setError(result.error)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <div style={runtimeSectionStyle}>
+      <div style={runtimeHeaderStyle}>RUNTIME</div>
+      <select
+        style={runtimeSelectStyle}
+        value={runtime}
+        disabled={pending}
+        onChange={(e) => setRuntime(e.target.value as AgentFamily)}
+      >
+        {RUNTIME_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+            {opt.value === companion.family ? ' — DEFAULT' : ''}
+          </option>
+        ))}
+      </select>
+      <input
+        style={modelInputStyle}
+        type="text"
+        placeholder="model override (optional)"
+        value={model}
+        disabled={pending}
+        onChange={(e) => setModel(e.target.value)}
+      />
+      <button
+        style={{ ...applyButtonStyle, ...(pending ? applyButtonPendingStyle : {}) }}
+        disabled={pending}
+        onClick={() => void handleApply()}
+      >
+        {pending ? 'APPLYING…' : 'APPLY'}
+      </button>
+      {error && <div style={runtimeErrorStyle}>{error}</div>}
+      <div style={runtimeHintStyle}>
+        Runtimes use their own auth — claude/codex login, GEMINI_API_KEY, FIREWORKS_API_KEY, or
+        your custom CLI&apos;s env. MechBay never stores keys.
+      </div>
     </div>
   )
 }
@@ -328,4 +413,68 @@ const relativeTimeStyle: React.CSSProperties = {
   color: colors.textSecondary,
   fontSize: 10,
   marginLeft: 'auto',
+}
+
+const runtimeSectionStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 6,
+  borderTop: `1px solid ${colors.borderHud}`,
+  borderBottom: `1px solid ${colors.borderHud}`,
+  padding: '10px 0',
+  marginBottom: 12,
+}
+
+const runtimeHeaderStyle: React.CSSProperties = {
+  fontSize: 10,
+  color: colors.amber,
+  letterSpacing: type.labelTracking,
+  textTransform: 'uppercase',
+}
+
+const runtimeSelectStyle: React.CSSProperties = {
+  background: colors.bgPanelDark,
+  border: `1px solid ${colors.borderHud}`,
+  color: colors.textPrimary,
+  fontFamily: type.mono,
+  fontSize: 11,
+  padding: '4px 6px',
+}
+
+const modelInputStyle: React.CSSProperties = {
+  background: colors.bgPanelDark,
+  border: `1px solid ${colors.borderHud}`,
+  color: colors.textPrimary,
+  fontFamily: type.mono,
+  fontSize: 11,
+  padding: '4px 6px',
+}
+
+const applyButtonStyle: React.CSSProperties = {
+  background: colors.amberTint,
+  border: `1px solid ${colors.amber}`,
+  color: colors.amber,
+  fontSize: 10,
+  fontWeight: 'bold',
+  letterSpacing: '0.05em',
+  textTransform: 'uppercase',
+  padding: '6px 10px',
+  cursor: 'pointer',
+}
+
+const applyButtonPendingStyle: React.CSSProperties = {
+  opacity: 0.5,
+  cursor: 'not-allowed',
+}
+
+const runtimeErrorStyle: React.CSSProperties = {
+  color: colors.statusFailed,
+  fontSize: 10,
+}
+
+const runtimeHintStyle: React.CSSProperties = {
+  color: colors.textMuted,
+  fontSize: 10,
+  lineHeight: 1.4,
+  fontStyle: 'italic',
 }

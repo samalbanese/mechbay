@@ -58,10 +58,19 @@ export class HermesRunner extends CliRunner {
     return command !== undefined && (await this.which(command)) !== null
   }
 
-  protected buildArgs(prompt: string): string[] {
+  protected buildArgs(prompt: string, model?: string): string[] {
     return this.commandTokens()
       .slice(1)
       .map((token) => token.replaceAll('{PROMPT}', prompt))
+      .map((token) => {
+        const hadModelPlaceholder = token.includes('{MODEL}')
+        const substituted = token.replaceAll('{MODEL}', model ?? '')
+        // Only drop tokens that existed solely to carry {MODEL} and ended
+        // up empty because no model override was set — never drop a
+        // token that was legitimately empty for unrelated reasons.
+        return hadModelPlaceholder && substituted.length === 0 ? null : substituted
+      })
+      .filter((token): token is string => token !== null)
   }
 
   protected stdinInput(prompt: string): string | null {

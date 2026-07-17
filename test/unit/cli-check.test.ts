@@ -76,4 +76,32 @@ describe('runCliAvailabilityCheck', () => {
     const claude = state.getState().companions.find((c) => c.family === 'claude')!
     expect(claude.cliAvailable).toBe(true)
   })
+
+  it('probes the runtime override family, not the native family, when one is set', async () => {
+    const store = makeInMemoryStore()
+    const state = new StateManager(store, '/tmp/cli-check-runtime-override')
+
+    // Reassign Atlas-Prime (native family 'claude') to run on 'codex'.
+    state.updateState((prev) => ({
+      ...prev,
+      companions: prev.companions.map((c) =>
+        c.family === 'claude' ? { ...c, runtime: 'codex' as const } : c
+      )
+    }))
+
+    const runners: Record<AgentFamily, Runner> = {
+      claude: stubRunner(false),
+      codex: stubRunner(true),
+      kimi: stubRunner(false),
+      gemini: stubRunner(false),
+      hermes: stubRunner(false)
+    }
+
+    await runCliAvailabilityCheck(state, runners)
+
+    const reassigned = state.getState().companions.find((c) => c.family === 'claude')!
+    // Native 'claude' runner reports false, but the override ('codex')
+    // reports true — cliAvailable must reflect the override, not family.
+    expect(reassigned.cliAvailable).toBe(true)
+  })
 })

@@ -33,7 +33,7 @@ export async function runCliAvailabilityCheck(
     ...prev,
     companions: prev.companions.map((c) => ({
       ...c,
-      cliAvailable: availability[c.family] ?? false
+      cliAvailable: availability[c.runtime ?? c.family] ?? false
     }))
   }))
 }
