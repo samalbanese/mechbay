@@ -2,134 +2,123 @@
 
 *Battletech for AI coding agents.*
 
-An Electron desktop app where you deploy real AI coding agents — Claude,
-Codex, Kimi, Gemini, Hermes — as distinct mech classes onto
-industrial-facility project-buildings in an isometric MechWarrior-styled
-command bay. Each mech has a soul and a memory.
+MechBay is an Electron desktop app for deploying real coding agents as mech-class companions. Drag a mech onto an isometric facility that represents a real project directory, give it a task, and follow the live output in the command-bay HUD.
 
-![MechBay preview](docs/preview.gif)
+![MechBay — isometric command bay](docs/screenshot-bay.png)
 
-*30-second demo: drag a mech onto a facility, watch the live log, see the completion.*
+*Demo gif coming soon.*
 
 ## What it does
 
-- **5 mech classes** map 1:1 to AI families:
-  - Atlas → Claude
-  - Marauder → Codex
-  - Raven → Kimi
-  - Catapult → Gemini
-  - Locust → Hermes
-- **6 industrial facilities** on a 16×16 isometric grid: Security Bay,
-  Research Lab, Foundry, Command Center, Salvage Dock, Data Archive.
-- **Drag a mech onto a facility** to deploy. A modal collects a task
-  prompt (with 4 quick-prompt chips for common asks), the mech walks to
-  the facility, and the CLI process streams live into a log panel.
-- **Up to 3 concurrent deployments.** Additional drops queue
-  automatically; the HUD shows `ACTIVE: n/3 · QUEUE: m`.
-- **Dead-in-field shader** on failure — mech slumps gray with smoke,
-  click to recover and walk home.
-- **Crash recovery** — if you force-quit mid-deploy, the next boot
-  detects zombies and surfaces them in a red recovery modal.
-- **NOT DEPLOYABLE overlay** for mechs whose CLI isn't on your PATH,
-  probed automatically at boot.
-- **Souls + memory** — each mech has a `soul.md` (persona, speaking
-  style) and a `memory.md` (history of past deployments). Both get
-  read into the system prompt on every deploy, so mechs evolve as you
-  edit their souls and accumulate history through use.
-- **Inline File Browser** — click any facility to browse its project
-  directory in the sidebar. Files are read through a whitelist-guarded
-  FsReader; `..` traversal and symlink escapes both fail closed.
+- Deploys real local agent processes into real project directories.
+- Maps five named mechs to Claude Code, Codex, Kimi on Fireworks AI, Gemini CLI, or any command-line agent you bring yourself.
+- Streams live output to the HUD; Raven can also show opt-in `INTENT` and `FINDINGS` thought cards.
+- Runs up to three deployments at once and places the rest in a FIFO queue.
+- Captures a Mission Debrief after every run: changed files, insertions, deletions, and a per-file diff table.
+- Keeps each mech's `soul.md` and `memory.md` between deployments, with an in-app Journal for editing both.
+- Handles the rough edges: dead-in-field failure states, click-to-recover, and a crash-recovery modal on the next launch.
+- Lets you browse facility files read-only through a whitelist guard, bulk import projects, or click an empty bay tile to add a facility from a directory picker.
 
-## Stack
+## The mechs
 
-Electron 39 · React 19 · TypeScript 5 · electron-vite 5 · Phaser 3.88 · Vitest 2
+| Mech | Class role | Runtime | Requirements |
+| --- | --- | --- | --- |
+| Atlas-Prime | Heavy assault | Claude Code | `claude` on `PATH` |
+| Marauder-Prime | Surgical strike | Codex | `codex` on `PATH` |
+| Raven-Prime | Recon scout | Kimi via Fireworks AI | `python` on `PATH` and `FIREWORKS_API_KEY` |
+| Catapult-Prime | Ranged multimodal | Gemini CLI | `gemini` on `PATH` |
+| Locust-Prime | Swarm courier | Bring your own agent | `MECHBAY_HERMES_CMD` set to a CLI command line |
 
-## Installation
+An unconfigured mech shows `⚠ NOT DEPLOYABLE`. The rest of the bay remains usable.
 
-Currently source-only — installer config is landed but builds aren't
-signed yet, so it's all `npm run dev` for now.
+## Quickstart
+
+Requirements: Node.js 20+, npm, and git on `PATH` (git powers Mission Debrief). MechBay runs on Windows, macOS, and Linux; it is developed on Windows. Install at least one runtime from the table above.
 
 ```bash
-git clone <repo>
+git clone https://github.com/samalbanese/mechbay.git
 cd mechbay
 npm install
 npm run dev
 ```
 
-For deploys to actually execute you also need at least one of these
-CLIs on your PATH:
+## Status
 
-- **Claude Code** (`claude`) — Anthropic's coding agent CLI
-- **Codex** (`codex`) — OpenAI GPT-5.4-Codex via `codex exec`
-- **Kimi** — Moonshot Kimi via Fireworks AI, through the bundled `scripts/kimi_fireworks.py` wrapper (uncapped, full agentic tools). Requires `python` on PATH and `FIREWORKS_API_KEY` in env or `~/.claude/env/personal.env`.
-- **Gemini** (`gemini`) — Google Gemini with `-p <prompt> -o text -y`
-- Hermes is wired as a stub — integration deferred
+**v1.0 — feature-complete MVP.**
 
-Any CLI not on PATH just renders its mech as NOT DEPLOYABLE; other
-mechs still work.
+## Configuring runtimes
+
+MechBay checks runtime availability at startup. Install and authenticate each CLI using its own instructions, then make sure its command is available on `PATH` before launching the app.
+
+- **Atlas-Prime / Claude Code:** install Claude Code so `claude` runs from a terminal.
+- **Marauder-Prime / Codex:** install the Codex CLI so `codex` runs from a terminal.
+- **Catapult-Prime / Gemini:** install Gemini CLI so `gemini` runs from a terminal.
+- **Raven-Prime / Kimi:** MechBay runs the bundled `scripts/kimi_fireworks.py` wrapper. It needs `python` on `PATH` and a Fireworks key. The wrapper gives Kimi a full agentic tool loop, and MechBay enables its `--narrate` mode automatically so Raven's `▸ INTENT` and `◆ FINDINGS` thought cards stream into the live log.
+- **Locust-Prime / bring your own agent:** set `MECHBAY_HERMES_CMD` to any CLI command line. If it contains `{PROMPT}`, MechBay substitutes the task there. Otherwise it pipes the task prompt to the command's standard input.
+
+For example, in PowerShell before starting MechBay:
+
+```powershell
+$env:FIREWORKS_API_KEY = "your-fireworks-key"
+$env:MECHBAY_HERMES_CMD = "aider"
+# Or let the command receive the task as an argument:
+$env:MECHBAY_HERMES_CMD = "opencode {PROMPT}"
+```
+
+`aider`, `goose`, `opencode`, and your own scripts can all work as Locust runtimes if they accept either standard input or a substituted `{PROMPT}` argument.
+
+## Mission Debrief, souls, and memory
+
+When a mech returns, MechBay runs a git diff in that facility and opens a **MISSION DEBRIEF** modal with file-level change stats. A check-mark speech bubble appears over the returning mech, and the outcome is written to that mech's `memory.md`.
+
+Each companion also has a `soul.md`: its persona and working voice. Both files are included in the next deployment's context. Use the Journal tab to read or edit them without leaving the app.
 
 ## Project structure
 
 ```
 src/
-  main/          Electron main process (Node.js)
-    runners/     One module per agent family + shared CliRunner base
-    ipc.ts       IPC handlers: DEPLOY_START, STATE_GET, SCAN_PROJECTS, etc.
-    state-manager.ts  Persistence, seed data, schema migration, zombie sweep
-    cli-check.ts Boot-time CLI availability probe
-    project-scanner.ts  Directory walk for ~/Projects project markers
-  preload/       contextBridge surface (window.mechbay.*)
+  main/              Electron process, IPC handlers, persistence, runners, and filesystem access
+    runners/         Shared runner base plus Claude, Codex, Kimi, Gemini, and BYO-agent runtimes
+  preload/           Safe window.mechbay bridge between Electron and the renderer
   renderer/
-    src/
-      App.tsx          React shell with HUD + sidebar + modals
-      game/BayScene.ts Phaser isometric scene
-      components/      DeployModal, CrashRecoveryModal, Versions
-      bus.ts           mitt event bus between Phaser and React
-  shared/        Types + IPC channel constants used by main AND renderer
+    src/             React command-bay UI, Phaser scene, HUD, modals, Journal, and File Browser
+  shared/            Serializable types, defaults, IDs, and the single IPC channel registry
 test/
-  unit/          Vitest unit tests (runners, state-manager, cli-check, scanner)
-  integration/   End-to-end deploy lifecycle against a fixture runner
-assets/          Mech/facility sprites (Gemini-generated, 1024×1024 PNGs)
+  unit/              Unit coverage for runners, state, log narration, filesystem access, and UI helpers
+  integration/       Deployment lifecycle coverage
+assets/              Mech and facility sprites
+scripts/             Kimi Fireworks wrapper and chromakey utility
 docs/
-  DECISIONS.md          Architecture + locked design decisions
-  manual-smoke-tests.md Ten manual scenarios for release-gating
-  superpowers/plans/    The original implementation plan
-  overnight-prep/       Decision docs for deferred design questions
+  DECISIONS.md       Architecture and product decisions
+  manual-smoke-tests.md  Release smoke-test checklist
+  history/           Archived project handoffs and overnight reports
 ```
 
 ## Development
 
 ```bash
-npm run dev          # electron-vite dev + hot reload
-npm run typecheck    # tsc --noEmit on node + web configs
-npm test             # vitest run (all suites)
-npm run test:watch   # vitest watch mode
-npm run build        # typecheck + electron-vite build → out/
-npm run build:win    # → electron-builder Windows NSIS installer (dist/)
-npm run chromakey    # process mech/facility sprites (jimp-based)
+npm run dev          # start Electron with hot reload
+npm run typecheck    # type-check main and renderer code
+npm test             # run the Vitest suite
+npm run test:watch   # run Vitest in watch mode
+npm run build        # type-check and build to out/
+npm run build:win    # build a Windows installer
+npm run build:mac    # build a macOS package
+npm run build:linux  # build a Linux package
+npm run chromakey    # process mech and facility sprites
 ```
 
-## Status
+Before publishing a change, use the manual release checklist in [docs/manual-smoke-tests.md](docs/manual-smoke-tests.md).
 
-**MVP-complete.** Waves 1-6 shipped:
+## Development history
 
-- ✅ Wave 1 — Plumbing (Electron scaffold, runner interface,
-  ClaudeRunner, StateManager, IPC, bare UI, integration test)
-- ✅ Wave 2 — Game layer (Phaser iso grid, drag-drop, walk tween,
-  MW HUD bezels)
-- ✅ Wave 3 — Assets + dead-in-field shader (all 12 sprites via
-  Gemini 3 Pro, click-to-recover)
-- ✅ Wave 4 — Full cast (4 more runners, CLI probe, queue,
-  Deploy Modal)
-- ✅ Wave 5 — Souls + File Browser (soul.md / memory.md scaffolding,
-  system prompt assembly, whitelist-guarded FsReader, tabbed
-  sidebar File Browser)
-- ✅ Wave 6 — Polish (project scanner, crash recovery modal, smoke
-  tests doc, this README, installer config)
+MechBay's six MVP waves built the Electron deployment plumbing, isometric game layer, asset pass, runtime roster and queue, companion memory plus file browsing, then release polish and recovery flows.
 
-See `docs/DECISIONS.md` for the design-decision log and
-`docs/superpowers/plans/2026-04-17-mechbay-implementation.md` for the
-original 6-wave plan.
+The decisions behind those waves, including tradeoffs and deferred ideas, live in [docs/DECISIONS.md](docs/DECISIONS.md).
+
+## License
+
+MIT. See [LICENSE](LICENSE).
 
 ## Why
 

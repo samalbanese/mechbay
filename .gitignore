@@ -25,3 +25,6 @@ coverage/
 
 # TypeScript incremental build artifacts
 *.tsbuildinfo
+
+# Local AI-agent session config
+.claude/
