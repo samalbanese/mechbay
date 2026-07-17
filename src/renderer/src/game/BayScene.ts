@@ -2,6 +2,7 @@ import Phaser from 'phaser'
 import type { AppState, Deployment, FacilityType, MechClass } from '../../../shared/types'
 import { bus } from '../bus'
 import { colors, type } from '../theme'
+import { computeFacingFlipX, computeWalkBob } from './bay-animation'
 
 import atlasUrl from '../../../../assets/mechs/atlas-poc.png?url'
 import marauderUrl from '../../../../assets/mechs/marauder-poc.png?url'
@@ -79,6 +80,21 @@ export class BayScene extends Phaser.Scene {
   private unavailableLabels = new Map<string, Phaser.GameObjects.Text>()
   private completionBubbles = new Set<Phaser.GameObjects.Container>()
 
+  // --- Animation-pass state (Wave 7). Every Map/ref here is torn down in
+  // shutdown() AND in render()'s entity-removal sweep, mirroring the
+  // cleanup pattern already used for smokeEmitters/unavailableLabels above.
+  private reducedMotion = false
+  private selectedCompanionId: string | null = null
+  private selectionRing: Phaser.GameObjects.Graphics | null = null
+  private selectionRingTween: Phaser.Tweens.Tween | null = null
+  private idleBreathTweens = new Map<string, Phaser.Tweens.Tween>()
+  private workingSwayTweens = new Map<string, Phaser.Tweens.Tween>()
+  private footDustEmitters = new Map<string, Phaser.GameObjects.Particles.ParticleEmitter>()
+  private workLights = new Map<string, Phaser.GameObjects.Image>()
+  private workLightTweens = new Map<string, Phaser.Tweens.Tween>()
+  private facilityBeacons = new Map<string, Phaser.GameObjects.Image>()
+  private facilityBeaconTweens = new Map<string, Phaser.Tweens.Tween>()
+
   constructor() {
     super('BayScene')
   }
@@ -115,6 +131,9 @@ export class BayScene extends Phaser.Scene {
 
   create(): void {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this)
+    // Checked once at scene creation, not live — a mid-session OS setting
+    // change would need a scene restart to take effect, which is fine here.
+    this.reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     this.cameras.main.setBackgroundColor('#0a0805')
     // Center camera on the geometric middle of the 16×16 iso diamond.
     // Center tile is (GRID_W/2, GRID_H/2) which iso-maps to (0, GRID_H*TILE_H/2).
@@ -151,6 +170,19 @@ export class BayScene extends Phaser.Scene {
         bus.emit('emptyTileClicked', { tile })
       }
     )
+  }
+
+  /**
+   * Per-frame hook (Phaser calls this automatically every tick). The only
+   * thing that needs continuous per-frame tracking is the selection ring
+   * following its mech around while it walks — everything else here is
+   * driven by tweens/timers instead of update().
+   */
+  update(): void {
+    if (!this.selectedCompanionId || !this.selectionRing) return
+    const sprite = this.mechSprites.get(this.selectedCompanionId)
+    if (!sprite) return
+    this.selectionRing.setPosition(sprite.x, sprite.y + MECH_DISPLAY_SIZE * 0.42)
   }
 
   /**
@@ -198,6 +230,11 @@ export class BayScene extends Phaser.Scene {
         MECH_KEY[companion.mechClass]
       )
       sprite.setDisplaySize(MECH_DISPLAY_SIZE, MECH_DISPLAY_SIZE)
+      // setDisplaySize leaves the sprite at a fractional scale (96px /
+      // texture size). Every scale animation below must stay RELATIVE to
+      // this base — tweening toward absolute 1.0 would stretch the mech
+      // back to full texture height.
+      sprite.setData('baseScaleY', sprite.scaleY)
       // Depth by y so mechs further south render on top of mechs further north.
       sprite.setDepth(100 + s.y)
       sprite.setInteractive({ draggable: true, pixelPerfect: false })
@@ -233,12 +270,14 @@ export class BayScene extends Phaser.Scene {
         // Only emit companionSelected if we didn't drag significantly
         if (!isDragging) {
           bus.emit('companionSelected', { companionId: companion.id })
+          this.setSelectedCompanion(companion.id)
           sprite.setTint(0xffcc33)
           this.time.delayedCall(120, () => sprite.clearTint())
         }
       })
 
       this.mechSprites.set(companion.id, sprite)
+      this.startIdleBreath(companion.id)
     }
 
     // Sync NOT DEPLOYABLE overlay with current cliAvailable flag. This
@@ -286,6 +325,7 @@ export class BayScene extends Phaser.Scene {
       sprite.setInteractive()
       sprite.on('pointerup', () => bus.emit('facilityClicked', { facilityId: facility.id }))
       this.facilitySprites.set(facility.id, sprite)
+      this.createFacilityBeacon(facility.id, s, this.state.facilities.indexOf(facility))
 
       // Facility label below the sprite
       this.add
@@ -308,12 +348,26 @@ export class BayScene extends Phaser.Scene {
         this.mechSprites.delete(id)
         this.unavailableLabels.get(id)?.destroy()
         this.unavailableLabels.delete(id)
+        this.killTween(this.idleBreathTweens, id)
+        this.killTween(this.workingSwayTweens, id)
+        this.footDustEmitters.get(id)?.destroy()
+        this.footDustEmitters.delete(id)
+        if (this.selectedCompanionId === id) {
+          this.selectedCompanionId = null
+          this.destroySelectionRing()
+        }
       }
     }
     for (const [id, sprite] of this.facilitySprites) {
       if (!this.state.facilities.some((f) => f.id === id)) {
         sprite.destroy()
         this.facilitySprites.delete(id)
+        this.killTween(this.facilityBeaconTweens, id)
+        this.facilityBeacons.get(id)?.destroy()
+        this.facilityBeacons.delete(id)
+        this.killTween(this.workLightTweens, id)
+        this.workLights.get(id)?.destroy()
+        this.workLights.delete(id)
       }
     }
   }
@@ -346,20 +400,168 @@ export class BayScene extends Phaser.Scene {
   /**
    * Smoothly move a mech sprite to a target tile. Used for deploy walk
    * animations. Resolves when the tween completes.
+   *
+   * The position itself is tweened against a plain `{ t }` progress proxy
+   * (not the sprite's x/y directly) so the per-frame walk bob can be
+   * composed on top of the interpolated position in the same onUpdate,
+   * rather than running a second tween that would fight the position
+   * tween over sprite.y every frame.
    */
   walkTo(companionId: string, targetTile: { x: number; y: number }): Promise<void> {
     const sprite = this.mechSprites.get(companionId)
     if (!sprite) return Promise.resolve()
     const target = isoToScreen(targetTile)
+    const targetY = target.y - MECH_DISPLAY_SIZE * 0.35
+    const startX = sprite.x
+    const startY = sprite.y
+
+    sprite.setFlipX(computeFacingFlipX(sprite.flipX, target.x - startX))
+
+    // A mech that's about to walk is no longer idle — stop the breathing
+    // loop and reset scaleY so the squash tween (played on arrival) always
+    // starts from a clean baseline.
+    this.killTween(this.idleBreathTweens, companionId)
+    sprite.scaleY = this.baseScaleY(sprite)
+    this.startFootDust(companionId, sprite)
+
+    const progress = { t: 0 }
     return new Promise<void>((resolve) => {
       this.tweens.add({
-        targets: sprite,
-        x: target.x,
-        y: target.y - MECH_DISPLAY_SIZE * 0.35,
+        targets: progress,
+        t: 1,
         duration: 1500,
         ease: 'Sine.easeInOut',
-        onComplete: () => resolve()
+        onUpdate: (tween) => {
+          sprite.x = Phaser.Math.Linear(startX, target.x, progress.t)
+          const baseY = Phaser.Math.Linear(startY, targetY, progress.t)
+          if (this.reducedMotion) {
+            sprite.y = baseY
+            return
+          }
+          const bob = computeWalkBob(tween.elapsed)
+          sprite.y = baseY + bob.yOffset
+          sprite.angle = bob.angleDeg
+        },
+        onComplete: () => {
+          sprite.x = target.x
+          sprite.y = targetY
+          sprite.angle = 0
+          this.stopFootDust(companionId)
+          this.playArrivalBurst(companionId, sprite)
+          resolve()
+        }
       })
+    })
+  }
+
+  /**
+   * Reactor-breathing idle loop — a barely-visible scaleY oscillation so
+   * mechs standing around don't read as frozen sprites. Each mech gets a
+   * random start delay so a room full of idle mechs doesn't breathe in
+   * lockstep. No-op if a breath tween is already running for this mech, or
+   * under prefers-reduced-motion.
+   */
+  private startIdleBreath(companionId: string): void {
+    if (this.reducedMotion) return
+    if (this.idleBreathTweens.has(companionId)) return
+    const sprite = this.mechSprites.get(companionId)
+    if (!sprite) return
+    const tween = this.tweens.add({
+      targets: sprite,
+      scaleY: this.baseScaleY(sprite) * 1.008,
+      duration: 1200,
+      yoyo: true,
+      repeat: -1,
+      delay: Math.random() * 2400,
+      ease: 'Sine.easeInOut'
+    })
+    this.idleBreathTweens.set(companionId, tween)
+  }
+
+  /**
+   * The sprite's resting scaleY, captured right after setDisplaySize()
+   * at creation. All scale animations must be multiples of this — the
+   * sprite's "natural" scale is ~0.1 (96px display / full texture size),
+   * so tweening toward absolute 1.0 would stretch it ~10× vertically.
+   */
+  private baseScaleY(sprite: Phaser.GameObjects.Image): number {
+    return (sprite.getData('baseScaleY') as number | undefined) ?? sprite.scaleY
+  }
+
+  /** Stop and forget a tracked tween, if one exists for this id. */
+  private killTween(map: Map<string, Phaser.Tweens.Tween>, id: string): void {
+    const tween = map.get(id)
+    if (!tween) return
+    tween.stop()
+    map.delete(id)
+  }
+
+  /**
+   * Dust puffs at the mech's feet while it walks. Reuses the single
+   * 'smoke' texture (tinted warm gray) rather than a dedicated dust asset.
+   * One emitter per mech, following the sprite via startFollow so it
+   * doesn't need per-frame repositioning from our own code.
+   */
+  private startFootDust(companionId: string, sprite: Phaser.GameObjects.Image): void {
+    if (this.reducedMotion) return
+    this.stopFootDust(companionId)
+    const feetOffsetY = MECH_DISPLAY_SIZE * 0.42
+    const dust = this.add.particles(sprite.x, sprite.y + feetOffsetY, 'smoke', {
+      frequency: 250,
+      quantity: 1,
+      lifespan: 500,
+      speed: { min: 5, max: 15 },
+      angle: { min: 200, max: 340 }, // biased up-and-outward in screen space
+      alpha: { start: 0.5, end: 0 },
+      scale: { start: 0.12, end: 0.3 },
+      tint: 0x8a8578
+    })
+    dust.startFollow(sprite, 0, feetOffsetY)
+    dust.setDepth(Math.max(1, sprite.depth - 1))
+    this.footDustEmitters.set(companionId, dust)
+  }
+
+  /** Stop emitting new dust immediately; already-alive particles finish fading on their own. */
+  private stopFootDust(companionId: string): void {
+    const dust = this.footDustEmitters.get(companionId)
+    if (!dust) return
+    dust.stop()
+    this.footDustEmitters.delete(companionId)
+    this.time.delayedCall(500, () => dust.destroy())
+  }
+
+  /**
+   * Arrival feedback: a small dust burst at the mech's feet plus a quick
+   * squash-and-recover on the sprite, then hand back off to idle breathing.
+   */
+  private playArrivalBurst(companionId: string, sprite: Phaser.GameObjects.Image): void {
+    if (!this.reducedMotion) {
+      const feetOffsetY = MECH_DISPLAY_SIZE * 0.42
+      const burst = this.add.particles(sprite.x, sprite.y + feetOffsetY, 'smoke', {
+        lifespan: 500,
+        speed: { min: 10, max: 30 },
+        angle: { min: 200, max: 340 },
+        alpha: { start: 0.6, end: 0 },
+        scale: { start: 0.15, end: 0.35 },
+        tint: 0x8a8578,
+        emitting: false
+      })
+      burst.setDepth(Math.max(1, sprite.depth - 1))
+      burst.explode(6)
+      this.time.delayedCall(500, () => burst.destroy())
+    }
+
+    const base = this.baseScaleY(sprite)
+    this.tweens.add({
+      targets: sprite,
+      scaleY: base * 0.96,
+      duration: 90,
+      yoyo: true,
+      ease: 'Quad.Out',
+      onComplete: () => {
+        sprite.scaleY = base
+        this.startIdleBreath(companionId)
+      }
     })
   }
 
@@ -376,6 +578,8 @@ export class BayScene extends Phaser.Scene {
 
     sprite.setTint(0x666666)
     sprite.setAlpha(0.6)
+    this.killTween(this.idleBreathTweens, companionId)
+    sprite.scaleY = this.baseScaleY(sprite)
 
     const smoke = this.add.particles(sprite.x, sprite.y - 10, 'smoke', {
       speed: { min: 10, max: 30 },
@@ -460,6 +664,171 @@ export class BayScene extends Phaser.Scene {
   }
 
   /**
+   * Track the selected mech and (re)draw its selection ring. The mech
+   * sprite's own pointerup handler calls this right after emitting
+   * `companionSelected` on the bus — the bus event drives the React-side
+   * stats panel, this drives the Phaser-side ring, and neither needs to
+   * know about the other.
+   */
+  private setSelectedCompanion(companionId: string): void {
+    if (this.selectedCompanionId === companionId) return
+    this.selectedCompanionId = companionId
+    this.destroySelectionRing()
+    this.createSelectionRing(companionId)
+  }
+
+  /**
+   * RTS-style selection ring: a pulsing iso-perspective ellipse under the
+   * mech's feet. Plays a quick expand-in on first selection, then settles
+   * into an infinite alpha pulse. Under reduced motion, the ring is drawn
+   * once at a fixed alpha with no pulse and no expand-in.
+   */
+  private createSelectionRing(companionId: string): void {
+    const sprite = this.mechSprites.get(companionId)
+    if (!sprite) return
+
+    const ring = this.add.graphics()
+    const cyan = Phaser.Display.Color.HexStringToColor(colors.cyan).color
+    const ringW = TILE_W * 0.55
+    const ringH = ringW / 2
+    ring.lineStyle(2, cyan, 1)
+    ring.strokeEllipse(0, 0, ringW, ringH)
+    ring.setPosition(sprite.x, sprite.y + MECH_DISPLAY_SIZE * 0.42)
+    ring.setDepth(Math.max(1, sprite.depth - 1))
+    this.selectionRing = ring
+
+    if (this.reducedMotion) {
+      ring.setAlpha(0.6)
+      return
+    }
+
+    ring.setScale(1.4)
+    ring.setAlpha(0)
+    this.tweens.add({
+      targets: ring,
+      scale: 1,
+      alpha: 0.8,
+      duration: 200,
+      ease: 'Quad.Out',
+      onComplete: () => {
+        this.selectionRingTween = this.tweens.add({
+          targets: ring,
+          alpha: 0.35,
+          duration: 1200,
+          yoyo: true,
+          repeat: -1,
+          ease: 'Sine.easeInOut'
+        })
+      }
+    })
+  }
+
+  private destroySelectionRing(): void {
+    if (this.selectionRingTween) {
+      this.selectionRingTween.stop()
+      this.selectionRingTween = null
+    }
+    if (this.selectionRing) {
+      this.tweens.killTweensOf(this.selectionRing)
+      this.selectionRing.destroy()
+      this.selectionRing = null
+    }
+  }
+
+  /**
+   * "Servos active" — a slow rotation sway on the mech, plus a pulsing
+   * amber work light near the target facility. Both are torn down together
+   * by stopWorkingState() the moment the deployment leaves 'working'
+   * (including going straight to 'failed', which also triggers
+   * applyDeadInField() in the same reactToDeploymentTransitions pass).
+   */
+  private startWorkingState(companionId: string, facilityId: string): void {
+    this.killTween(this.idleBreathTweens, companionId)
+    const sprite = this.mechSprites.get(companionId)
+    if (sprite) sprite.scaleY = this.baseScaleY(sprite)
+
+    if (sprite && !this.reducedMotion) {
+      const swayTween = this.tweens.add({
+        targets: sprite,
+        angle: 0.6,
+        duration: 1600,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut'
+      })
+      this.workingSwayTweens.set(companionId, swayTween)
+    }
+
+    if (this.reducedMotion || this.workLights.has(facilityId)) return
+    const facSprite = this.facilitySprites.get(facilityId)
+    if (!facSprite) return
+    const amber = Phaser.Display.Color.HexStringToColor(colors.amber).color
+    const light = this.add
+      .image(facSprite.x, facSprite.y - FACILITY_DISPLAY_H * 0.3, 'smoke')
+      .setTint(amber)
+      .setScale(0.35)
+      .setAlpha(0.2)
+      .setDepth(facSprite.depth + 1)
+      .setBlendMode(Phaser.BlendModes.ADD)
+    this.workLights.set(facilityId, light)
+    const lightTween = this.tweens.add({
+      targets: light,
+      alpha: 0.9,
+      duration: 900,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    })
+    this.workLightTweens.set(facilityId, lightTween)
+  }
+
+  private stopWorkingState(companionId: string, facilityId: string): void {
+    this.killTween(this.workingSwayTweens, companionId)
+    const sprite = this.mechSprites.get(companionId)
+    if (sprite) sprite.angle = 0
+    this.startIdleBreath(companionId)
+
+    this.killTween(this.workLightTweens, facilityId)
+    const light = this.workLights.get(facilityId)
+    if (light) {
+      light.destroy()
+      this.workLights.delete(facilityId)
+    }
+  }
+
+  /**
+   * Tiny blinking amber beacon on every facility (working or not) so the
+   * bay reads as alive even when nothing is deployed. Staggered per-facility
+   * period keeps them from blinking in unison. Skipped entirely under
+   * reduced motion rather than drawn static — these are pure ambience with
+   * no functional meaning, unlike the selection ring.
+   */
+  private createFacilityBeacon(
+    facilityId: string,
+    screenPos: { x: number; y: number },
+    index: number
+  ): void {
+    if (this.reducedMotion) return
+    const amber = Phaser.Display.Color.HexStringToColor(colors.amber).color
+    const beacon = this.add
+      .image(screenPos.x, screenPos.y - FACILITY_DISPLAY_H * 0.55, 'smoke')
+      .setTint(amber)
+      .setScale(0.12)
+      .setAlpha(0.1)
+      .setDepth(50 + screenPos.y + 1)
+    this.facilityBeacons.set(facilityId, beacon)
+    const tween = this.tweens.add({
+      targets: beacon,
+      alpha: 0.8,
+      duration: 1800 + index * 230,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    })
+    this.facilityBeaconTweens.set(facilityId, tween)
+  }
+
+  /**
    * Phaser calls this on scene stop/restart. Particle emitters created
    * via `this.add.particles()` are NOT auto-destroyed with the scene, so
    * they leak GPU resources on repeat shutdowns (rare in the current
@@ -479,6 +848,23 @@ export class BayScene extends Phaser.Scene {
       bubble.destroy()
     }
     this.completionBubbles.clear()
+
+    for (const tween of this.idleBreathTweens.values()) tween.stop()
+    this.idleBreathTweens.clear()
+    for (const tween of this.workingSwayTweens.values()) tween.stop()
+    this.workingSwayTweens.clear()
+    for (const dust of this.footDustEmitters.values()) dust.destroy()
+    this.footDustEmitters.clear()
+    for (const tween of this.workLightTweens.values()) tween.stop()
+    this.workLightTweens.clear()
+    for (const light of this.workLights.values()) light.destroy()
+    this.workLights.clear()
+    for (const tween of this.facilityBeaconTweens.values()) tween.stop()
+    this.facilityBeaconTweens.clear()
+    for (const beacon of this.facilityBeacons.values()) beacon.destroy()
+    this.facilityBeacons.clear()
+    this.destroySelectionRing()
+    this.selectedCompanionId = null
   }
 
   /**
@@ -498,6 +884,13 @@ export class BayScene extends Phaser.Scene {
 
       if (dep.status === 'failed' && prevDep.status !== 'failed') {
         this.applyDeadInField(dep.companionId)
+      }
+
+      if (dep.status === 'working' && prevDep.status !== 'working') {
+        this.startWorkingState(dep.companionId, dep.facilityId)
+      }
+      if (dep.status !== 'working' && prevDep.status === 'working') {
+        this.stopWorkingState(dep.companionId, dep.facilityId)
       }
 
       if (dep.status === 'completed' && prevDep.status === 'working') {
