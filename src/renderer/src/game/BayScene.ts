@@ -1,6 +1,7 @@
 import Phaser from 'phaser'
-import type { AppState, FacilityType, MechClass } from '../../../shared/types'
+import type { AppState, Deployment, FacilityType, MechClass } from '../../../shared/types'
 import { bus } from '../bus'
+import { colors, type } from '../theme'
 
 import atlasUrl from '../../../../assets/mechs/atlas-poc.png?url'
 import marauderUrl from '../../../../assets/mechs/marauder-poc.png?url'
@@ -76,6 +77,7 @@ export class BayScene extends Phaser.Scene {
   private facilitySprites = new Map<string, Phaser.GameObjects.Image>()
   private smokeEmitters = new Map<string, Phaser.GameObjects.Particles.ParticleEmitter>()
   private unavailableLabels = new Map<string, Phaser.GameObjects.Text>()
+  private completionBubbles = new Set<Phaser.GameObjects.Container>()
 
   constructor() {
     super('BayScene')
@@ -112,6 +114,7 @@ export class BayScene extends Phaser.Scene {
   }
 
   create(): void {
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this)
     this.cameras.main.setBackgroundColor('#0a0805')
     // Center camera on the geometric middle of the 16×16 iso diamond.
     // Center tile is (GRID_W/2, GRID_H/2) which iso-maps to (0, GRID_H*TILE_H/2).
@@ -189,7 +192,11 @@ export class BayScene extends Phaser.Scene {
       if (this.mechSprites.has(companion.id)) continue
       const s = isoToScreen(companion.homeTile)
 
-      const sprite = this.add.image(s.x, s.y - MECH_DISPLAY_SIZE * 0.35, MECH_KEY[companion.mechClass])
+      const sprite = this.add.image(
+        s.x,
+        s.y - MECH_DISPLAY_SIZE * 0.35,
+        MECH_KEY[companion.mechClass]
+      )
       sprite.setDisplaySize(MECH_DISPLAY_SIZE, MECH_DISPLAY_SIZE)
       // Depth by y so mechs further south render on top of mechs further north.
       sprite.setDepth(100 + s.y)
@@ -269,7 +276,11 @@ export class BayScene extends Phaser.Scene {
       if (this.facilitySprites.has(facility.id)) continue
       const s = isoToScreen(facility.tile)
 
-      const sprite = this.add.image(s.x, s.y - FACILITY_DISPLAY_H * 0.3, FACILITY_KEY[facility.facilityType])
+      const sprite = this.add.image(
+        s.x,
+        s.y - FACILITY_DISPLAY_H * 0.3,
+        FACILITY_KEY[facility.facilityType]
+      )
       sprite.setDisplaySize(FACILITY_DISPLAY_W, FACILITY_DISPLAY_H)
       sprite.setDepth(50 + s.y)
       sprite.setInteractive()
@@ -403,6 +414,51 @@ export class BayScene extends Phaser.Scene {
     }
   }
 
+  private showCompletionBubble(companionId: string, deployment: Deployment): void {
+    const sprite = this.mechSprites.get(companionId)
+    if (!sprite) return
+
+    const stats = deployment.diffStats
+    const message = !stats
+      ? '✓ done'
+      : stats.filesChanged === 0
+        ? '✓ no changes'
+        : `✓ ${stats.filesChanged} file${stats.filesChanged === 1 ? '' : 's'} +${stats.insertions} −${stats.deletions}`
+    const label = this.add
+      .text(0, 0, message, {
+        fontFamily: type.mono,
+        fontSize: '13px',
+        fontStyle: 'bold',
+        color: colors.cyan
+      })
+      .setOrigin(0.5)
+    const width = label.width + 12
+    const height = label.height + 6
+    const background = this.add.graphics()
+    const backgroundColor = Phaser.Display.Color.HexStringToColor(colors.bgPanelDark).color
+    const borderColor = Phaser.Display.Color.HexStringToColor(colors.cyan).color
+    background.fillStyle(backgroundColor, 0.9)
+    background.fillRoundedRect(-width / 2, -height / 2, width, height, 4)
+    background.lineStyle(1, borderColor, 0.55)
+    background.strokeRoundedRect(-width / 2, -height / 2, width, height, 4)
+
+    const bubble = this.add
+      .container(sprite.x, sprite.y - MECH_DISPLAY_SIZE * 0.85, [background, label])
+      .setDepth(Math.max(1000, sprite.depth + 10))
+    this.completionBubbles.add(bubble)
+    this.tweens.add({
+      targets: bubble,
+      y: bubble.y - 30,
+      alpha: 0,
+      duration: 4000,
+      ease: 'Sine.easeOut',
+      onComplete: () => {
+        this.completionBubbles.delete(bubble)
+        bubble.destroy()
+      }
+    })
+  }
+
   /**
    * Phaser calls this on scene stop/restart. Particle emitters created
    * via `this.add.particles()` are NOT auto-destroyed with the scene, so
@@ -418,6 +474,11 @@ export class BayScene extends Phaser.Scene {
       label.destroy()
     }
     this.unavailableLabels.clear()
+    for (const bubble of this.completionBubbles) {
+      this.tweens.killTweensOf(bubble)
+      bubble.destroy()
+    }
+    this.completionBubbles.clear()
   }
 
   /**
@@ -437,6 +498,10 @@ export class BayScene extends Phaser.Scene {
 
       if (dep.status === 'failed' && prevDep.status !== 'failed') {
         this.applyDeadInField(dep.companionId)
+      }
+
+      if (dep.status === 'completed' && prevDep.status === 'working') {
+        this.showCompletionBubble(dep.companionId, dep)
       }
 
       if (

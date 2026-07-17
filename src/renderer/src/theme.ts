@@ -9,18 +9,19 @@ export const colors = {
   bgPanel: '#111',
   bgPanelDark: '#0a0805',
   bgHud: '#1a1510',
+  overlay: 'rgba(0, 0, 0, 0.75)',
 
   // Borders
   border: '#2a2a2a',
   borderHud: '#2a2520',
 
   // DeployModal-specific tokens (migrated from hardcoded constants)
-  bgPanelDarkAlt: '#0a0805',    // was DARK_BG
-  borderHudAlt: '#2a2520',      // was BORDER_COLOR
-  textMutedAlt: '#888',         // was TEXT_MUTED
-  textDim: '#666',              // was TEXT_DIM
+  bgPanelDarkAlt: '#0a0805', // was DARK_BG
+  borderHudAlt: '#2a2520', // was BORDER_COLOR
+  textMutedAlt: '#888', // was TEXT_MUTED
+  textDim: '#666', // was TEXT_DIM
   statusFailedLight: '#ff6b6b', // lighter shade for failed status
-  statusFailedDark: '#c44',     // darker shade for failed borders
+  statusFailedDark: '#c44', // darker shade for failed borders
 
   // Brand colors
   orange: '#e85f00',
@@ -55,14 +56,14 @@ export const colors = {
   // LED states
   ledGreen: '#0f0',
   ledAmber: '#ffcc33',
-  ledRed: '#ff4444',
+  ledRed: '#ff4444'
 }
 
 export const type = {
   mono: "ui-monospace, 'Cascadia Code', Consolas, Menlo, monospace",
-  sans: "system-ui, -apple-system, sans-serif",
+  sans: 'system-ui, -apple-system, sans-serif',
   labelTracking: '0.15em',
-  hudTracking: '0.1em',
+  hudTracking: '0.1em'
 }
 
 export const animations = {
@@ -98,5 +99,5 @@ export const animations = {
         0%, 100% { box-shadow: 0 0 4px currentColor; }
       }
     }
-  `,
+  `
 }

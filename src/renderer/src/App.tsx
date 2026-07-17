@@ -5,6 +5,7 @@ import { BayScene } from './game/BayScene'
 import { bus } from './bus'
 import { DeployModal } from './components/DeployModal'
 import { CrashRecoveryModal } from './components/CrashRecoveryModal'
+import { DebriefModal } from './components/DebriefModal'
 import { FileBrowser } from './components/FileBrowser'
 import { JournalTab } from './components/JournalTab'
 import { BulkImportModal } from './components/BulkImportModal'
@@ -28,15 +29,45 @@ function App(): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<SidebarTab>('log')
   const [error, setError] = useState<string | null>(null)
   const [bulkImportOpen, setBulkImportOpen] = useState(false)
+  const [debriefQueue, setDebriefQueue] = useState<string[]>([])
 
   const canvasParentRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<BayScene | null>(null)
   const gameRef = useRef<Phaser.Game | null>(null)
+  const previousStateRef = useRef<AppState | null>(null)
 
   // Subscribe to IPC state + log chunks
   useEffect(() => {
-    window.mechbay.getState().then(setState).catch((e) => setError(String(e)))
-    const offState = window.mechbay.onStateChange(setState)
+    window.mechbay
+      .getState()
+      .then((initialState) => {
+        previousStateRef.current = initialState
+        setState(initialState)
+      })
+      .catch((e) => setError(String(e)))
+    const offState = window.mechbay.onStateChange((nextState) => {
+      const previousState = previousStateRef.current
+      if (previousState) {
+        const completedIds = nextState.deployments
+          .filter((deployment) => {
+            const previousDeployment = previousState.deployments.find(
+              (candidate) => candidate.id === deployment.id
+            )
+            return deployment.status === 'completed' && previousDeployment?.status !== 'completed'
+          })
+          .map((deployment) => deployment.id)
+
+        if (completedIds.length > 0) {
+          setDebriefQueue((queue) => {
+            const queuedIds = new Set(queue)
+            const newIds = completedIds.filter((id) => !queuedIds.has(id))
+            return newIds.length > 0 ? [...queue, ...newIds] : queue
+          })
+        }
+      }
+      previousStateRef.current = nextState
+      setState(nextState)
+    })
     const offRecovery = window.mechbay.onRecoveryZombies((zombies) => setRecoveryZombies(zombies))
     return () => {
       offState()
@@ -86,7 +117,9 @@ function App(): React.JSX.Element {
             setActiveTab('files')
           }
         })
-        .catch((e) => alert(`Could not place building: ${e instanceof Error ? e.message : String(e)}`))
+        .catch((e) =>
+          alert(`Could not place building: ${e instanceof Error ? e.message : String(e)}`)
+        )
     }
     bus.on('dropOnFacility', offDrop)
     bus.on('companionSelected', offSelect)
@@ -119,6 +152,18 @@ function App(): React.JSX.Element {
   }
 
   const selectedCompanion = state?.companions.find((c) => c.id === selectedCompanionId) ?? null
+  const debriefDeployment = state?.deployments.find(
+    (deployment) => deployment.id === debriefQueue[0]
+  )
+  const debriefCompanion = state?.companions.find(
+    (companion) => companion.id === debriefDeployment?.companionId
+  )
+  const debriefFacility = state?.facilities.find(
+    (facility) => facility.id === debriefDeployment?.facilityId
+  )
+  const otherModalOpen = Boolean(
+    pendingDeploy || bulkImportOpen || (recoveryZombies && recoveryZombies.length > 0)
+  )
 
   // Build deployment info for log pane separators using Map for O(1) companion lookup
   const deploymentInfo = useMemo(() => {
@@ -127,7 +172,7 @@ function App(): React.JSX.Element {
     return state.deployments.map((d) => ({
       id: d.id,
       companionName: companionMap.get(d.companionId)?.name ?? 'Unknown',
-      startedAt: d.startedAt,
+      startedAt: d.startedAt
     }))
   }, [state])
 
@@ -152,7 +197,7 @@ function App(): React.JSX.Element {
               flex: 1,
               minHeight: 0,
               display: 'flex',
-              flexDirection: 'column',
+              flexDirection: 'column'
             }}
           >
             <div style={tabRowStyle}>
@@ -195,26 +240,20 @@ function App(): React.JSX.Element {
             </div>
 
             {activeTab === 'log' && (
-              <LogPane
-                logs={state?.logChunks ?? []}
-                deployments={deploymentInfo}
-              />
+              <LogPane logs={state?.logChunks ?? []} deployments={deploymentInfo} />
             )}
 
-            {activeTab === 'files' && browsingFacilityId && state && (() => {
-              const facility = state.facilities.find((f) => f.id === browsingFacilityId)
-              if (!facility) return <div style={{ color: colors.textSecondary }}>Facility not found.</div>
-              return (
-                <FileBrowser
-                  facilityPath={facility.path}
-                  facilityName={facility.name}
-                />
-              )
-            })()}
+            {activeTab === 'files' &&
+              browsingFacilityId &&
+              state &&
+              (() => {
+                const facility = state.facilities.find((f) => f.id === browsingFacilityId)
+                if (!facility)
+                  return <div style={{ color: colors.textSecondary }}>Facility not found.</div>
+                return <FileBrowser facilityPath={facility.path} facilityName={facility.name} />
+              })()}
 
-            {activeTab === 'journal' && (
-              <JournalTab companionId={selectedCompanionId} />
-            )}
+            {activeTab === 'journal' && <JournalTab companionId={selectedCompanionId} />}
           </div>
         </div>
       </div>
@@ -222,47 +261,51 @@ function App(): React.JSX.Element {
       <HudFooter />
 
       {recoveryZombies && recoveryZombies.length > 0 && (
-        <CrashRecoveryModal
-          zombies={recoveryZombies}
-          onDismiss={() => setRecoveryZombies(null)}
+        <CrashRecoveryModal zombies={recoveryZombies} onDismiss={() => setRecoveryZombies(null)} />
+      )}
+
+      {bulkImportOpen && <BulkImportModal onClose={() => setBulkImportOpen(false)} />}
+
+      {!otherModalOpen && debriefDeployment && debriefCompanion && debriefFacility && (
+        <DebriefModal
+          deployment={debriefDeployment}
+          companion={debriefCompanion}
+          facility={debriefFacility}
+          onDismiss={() => setDebriefQueue((queue) => queue.slice(1))}
         />
       )}
 
-      {bulkImportOpen && (
-        <BulkImportModal
-          onClose={() => setBulkImportOpen(false)}
-        />
-      )}
-
-      {pendingDeploy && state && (() => {
-        const companion = state.companions.find((c) => c.id === pendingDeploy.companionId)
-        const facility = state.facilities.find((f) => f.id === pendingDeploy.facilityId)
-        if (!companion || !facility) {
-          // State drifted (rare) — just dismiss.
-          setPendingDeploy(null)
-          return null
-        }
-        return (
-          <DeployModal
-            companion={companion}
-            facility={facility}
-            onCancel={() => setPendingDeploy(null)}
-            onDeploy={(prompt, quickPrompt) => {
-              window.mechbay
-                .deployStart({
-                  companionId: pendingDeploy.companionId,
-                  facilityId: pendingDeploy.facilityId,
-                  taskPrompt: prompt,
-                  quickPromptUsed: quickPrompt
-                })
-                .catch((e) =>
-                  alert(`Deploy failed: ${e instanceof Error ? e.message : String(e)}`)
-                )
-              setPendingDeploy(null)
-            }}
-          />
-        )
-      })()}
+      {pendingDeploy &&
+        state &&
+        (() => {
+          const companion = state.companions.find((c) => c.id === pendingDeploy.companionId)
+          const facility = state.facilities.find((f) => f.id === pendingDeploy.facilityId)
+          if (!companion || !facility) {
+            // State drifted (rare) — just dismiss.
+            setPendingDeploy(null)
+            return null
+          }
+          return (
+            <DeployModal
+              companion={companion}
+              facility={facility}
+              onCancel={() => setPendingDeploy(null)}
+              onDeploy={(prompt, quickPrompt) => {
+                window.mechbay
+                  .deployStart({
+                    companionId: pendingDeploy.companionId,
+                    facilityId: pendingDeploy.facilityId,
+                    taskPrompt: prompt,
+                    quickPromptUsed: quickPrompt
+                  })
+                  .catch((e) =>
+                    alert(`Deploy failed: ${e instanceof Error ? e.message : String(e)}`)
+                  )
+                setPendingDeploy(null)
+              }}
+            />
+          )
+        })()}
     </div>
   )
 }
@@ -274,20 +317,20 @@ const shellStyle: React.CSSProperties = {
   height: '100%',
   display: 'flex',
   flexDirection: 'column',
-  fontSize: 14,
+  fontSize: 14
 }
 
 const mainStyle: React.CSSProperties = {
   flex: 1,
   display: 'flex',
-  minHeight: 0,
+  minHeight: 0
 }
 
 const canvasParentStyle: React.CSSProperties = {
   flex: 1,
   background: colors.bgPanelDark,
   overflow: 'hidden',
-  minWidth: 0,
+  minWidth: 0
 }
 
 const sidebarStyle: React.CSSProperties = {
@@ -298,14 +341,14 @@ const sidebarStyle: React.CSSProperties = {
   flexDirection: 'column',
   gap: 12,
   minHeight: 0,
-  flexShrink: 0,
+  flexShrink: 0
 }
 
 const sidebarPanelStyle: React.CSSProperties = {
   background: colors.bgHud,
   border: `1px solid ${colors.borderHud}`,
   padding: 10,
-  fontSize: 12,
+  fontSize: 12
 }
 
 const tabRowStyle: React.CSSProperties = {
@@ -313,7 +356,7 @@ const tabRowStyle: React.CSSProperties = {
   alignItems: 'center',
   gap: 2,
   marginBottom: 8,
-  borderBottom: `1px solid ${colors.borderHud}`,
+  borderBottom: `1px solid ${colors.borderHud}`
 }
 
 const tabStyle: React.CSSProperties = {
@@ -326,13 +369,13 @@ const tabStyle: React.CSSProperties = {
   padding: '4px 10px',
   cursor: 'pointer',
   fontFamily: 'inherit',
-  fontWeight: 'bold',
+  fontWeight: 'bold'
 }
 
 const tabActiveStyle: React.CSSProperties = {
   ...tabStyle,
   color: colors.amber,
-  borderBottom: `2px solid ${colors.amber}`,
+  borderBottom: `2px solid ${colors.amber}`
 }
 
 const tabCloseStyle: React.CSSProperties = {
@@ -343,7 +386,7 @@ const tabCloseStyle: React.CSSProperties = {
   fontSize: 14,
   padding: '2px 8px',
   cursor: 'pointer',
-  fontFamily: 'inherit',
+  fontFamily: 'inherit'
 }
 
 export default App

@@ -61,6 +61,12 @@ export interface Facility {
   decommissioned?: boolean
 }
 
+export interface DiffFileStat {
+  path: string
+  insertions: number
+  deletions: number
+}
+
 export interface Deployment {
   id: string
   companionId: string
@@ -73,6 +79,8 @@ export interface Deployment {
   exitCode?: number
   summary?: string
   diffStats?: { filesChanged: number; insertions: number; deletions: number }
+  diffFiles?: DiffFileStat[]
+  baselineSha?: string
   pendingInput?: { prompt: string; detectedAt: number }
 }
 
@@ -106,9 +114,7 @@ export interface SoulReadPayload {
 }
 
 /** Result for SOUL_READ IPC call. */
-export type SoulReadResult =
-  | { ok: true; content: string }
-  | { ok: false; error: string }
+export type SoulReadResult = { ok: true; content: string } | { ok: false; error: string }
 
 /** Payload for SOUL_WRITE IPC call. */
 export interface SoulWritePayload {
@@ -117,9 +123,7 @@ export interface SoulWritePayload {
 }
 
 /** Result for SOUL_WRITE IPC call. */
-export type SoulWriteResult =
-  | { ok: true }
-  | { ok: false; error: string }
+export type SoulWriteResult = { ok: true } | { ok: false; error: string }
 
 /** Payload for MEMORY_READ IPC call. */
 export interface MemoryReadPayload {
@@ -127,9 +131,7 @@ export interface MemoryReadPayload {
 }
 
 /** Result for MEMORY_READ IPC call. */
-export type MemoryReadResult =
-  | { ok: true; content: string }
-  | { ok: false; error: string }
+export type MemoryReadResult = { ok: true; content: string } | { ok: false; error: string }
 
 /** Payload for BULK_IMPORT_RUN IPC call. */
 export interface BulkImportRunPayload {

@@ -20,10 +20,17 @@ import type { StateManager } from './state-manager'
 import type { Runner } from './runners/types'
 import { ulid } from '../shared/ulid'
 import { scanProjects, type DiscoveredProject } from './project-scanner'
-import { assembleSystemPrompt, appendMemoryEntry, readSoul, writeSoul, readMemory } from './soul-memory'
+import {
+  assembleSystemPrompt,
+  appendMemoryEntry,
+  readSoul,
+  writeSoul,
+  readMemory
+} from './soul-memory'
 import type { FsReader, FsNode } from './fs-reader'
 import { facilityTypeFromName } from './facility-type-hash'
 import { NarrationParser } from './log-narration-parser'
+import { captureGitBaseline, computeDiffSummary } from './git-diff'
 
 const GRID_W = 16
 const GRID_H = 16
@@ -37,30 +44,19 @@ export interface IpcDeps {
 
 const FS_DIR_IGNORE = ['node_modules', '.git', 'dist', 'build', '.next', '.turbo', 'out']
 
-const ACTIVE_STATUSES: DeploymentStatus[] = [
-  'walking-to',
-  'working',
-  'awaiting-input',
-  'returning'
-]
+const ACTIVE_STATUSES: DeploymentStatus[] = ['walking-to', 'working', 'awaiting-input', 'returning']
 
 export function registerIpc(opts: IpcDeps): void {
   const { win, state, fsReader } = opts
 
   // Filesystem: whitelist-guarded read-only access for the File Browser.
   // Handlers simply delegate to FsReader; all security lives there.
-  ipcMain.handle(
-    IPC.FS_READ_DIR,
-    async (_e, args: { path: string }): Promise<FsNode[]> => {
-      return fsReader.readDir(args.path, { ignore: FS_DIR_IGNORE })
-    }
-  )
-  ipcMain.handle(
-    IPC.FS_READ_FILE,
-    async (_e, args: { path: string }): Promise<string> => {
-      return fsReader.readFile(args.path)
-    }
-  )
+  ipcMain.handle(IPC.FS_READ_DIR, async (_e, args: { path: string }): Promise<FsNode[]> => {
+    return fsReader.readDir(args.path, { ignore: FS_DIR_IGNORE })
+  })
+  ipcMain.handle(IPC.FS_READ_FILE, async (_e, args: { path: string }): Promise<string> => {
+    return fsReader.readFile(args.path)
+  })
 
   // Manual facility placement: user clicked an empty iso tile, we show the
   // OS directory picker, and if they choose one we add a new facility
@@ -126,16 +122,13 @@ export function registerIpc(opts: IpcDeps): void {
   // projects map onto the 6 seeded archetype-facilities is a design
   // decision the user needs to make. See docs/overnight-prep/
   // 2026-04-17-project-scanner-facility-binding.md for the analysis.
-  ipcMain.handle(
-    IPC.SCAN_PROJECTS,
-    async (_e, rootDir?: string): Promise<DiscoveredProject[]> => {
-      const s = state.getState()
-      const root = rootDir ?? s.settings.projectsDir
-      const results = await scanProjects(root, s.settings.ignoredMarkers)
-      state.updateState((prev) => ({ ...prev, lastScanAt: Date.now() }))
-      return results
-    }
-  )
+  ipcMain.handle(IPC.SCAN_PROJECTS, async (_e, rootDir?: string): Promise<DiscoveredProject[]> => {
+    const s = state.getState()
+    const root = rootDir ?? s.settings.projectsDir
+    const results = await scanProjects(root, s.settings.ignoredMarkers)
+    state.updateState((prev) => ({ ...prev, lastScanAt: Date.now() }))
+    return results
+  })
 
   ipcMain.handle(
     IPC.DEPLOY_START,
@@ -196,12 +189,9 @@ export function registerIpc(opts: IpcDeps): void {
   )
 
   // Soul/Memory read/write handlers for Journal tab
-  ipcMain.handle(
-    IPC.SOUL_READ,
-    async (_e, payload: SoulReadPayload): Promise<SoulReadResult> => {
-      return readSoul(payload.companionId)
-    }
-  )
+  ipcMain.handle(IPC.SOUL_READ, async (_e, payload: SoulReadPayload): Promise<SoulReadResult> => {
+    return readSoul(payload.companionId)
+  })
 
   ipcMain.handle(
     IPC.SOUL_WRITE,
@@ -302,6 +292,7 @@ export async function executeDeployment(
   }))
 
   let exitCode: number
+  let baselineSha: string | null = null
   try {
     // Wrap the task prompt in the companion's soul + memory so every
     // deploy carries personality context + past-run history. If assembly
@@ -312,6 +303,14 @@ export async function executeDeployment(
       { soulPath: companion.soulPath, memoryPath: companion.memoryPath },
       taskPrompt
     )
+    baselineSha = await captureGitBaseline(facility.path)
+    state.updateState((prev) => ({
+      ...prev,
+      deployments: prev.deployments.map((d) =>
+        d.id === deploymentId && baselineSha ? { ...d, baselineSha } : d
+      )
+    }))
+
     const result = await runner.spawn(facility.path, fullPrompt)
     const parser = new NarrationParser()
 
@@ -361,21 +360,42 @@ export async function executeDeployment(
   }
 
   const finalStatus: DeploymentStatus = exitCode === 0 ? 'completed' : 'failed'
+  const diff = await computeDiffSummary(facility.path, baselineSha)
+  const diffFields = diff
+    ? {
+        diffStats: {
+          filesChanged: diff.filesChanged,
+          insertions: diff.insertions,
+          deletions: diff.deletions
+        },
+        diffFiles: diff.files
+      }
+    : {}
+  const outcome =
+    exitCode === 0
+      ? diff === null
+        ? 'Completed. (no git repository — diff unavailable)'
+        : diff.filesChanged === 0
+          ? 'Completed. No file changes detected.'
+          : `Completed. ${diff.filesChanged} file${diff.filesChanged === 1 ? '' : 's'} changed, +${diff.insertions} −${diff.deletions}.`
+      : `Failed. Exit ${exitCode}.`
   state.updateState((prev) => ({
     ...prev,
     deployments: prev.deployments.map((d) =>
       d.id === deploymentId
-        ? { ...d, status: finalStatus, exitCode, completedAt: Date.now() }
+        ? {
+            ...d,
+            status: finalStatus,
+            exitCode,
+            completedAt: Date.now(),
+            summary: outcome,
+            ...diffFields
+          }
         : d
     )
   }))
 
-  recordMemory(
-    companion,
-    facility,
-    taskPrompt,
-    exitCode === 0 ? `Success. Exit 0.` : `Failed. Exit ${exitCode}.`
-  )
+  recordMemory(companion, facility, taskPrompt, outcome)
 
   // Auto-advance the next queued deployment if a slot opened.
   // (Wave 4 Task 4.3 expands this; minimal version included here.)
