@@ -1,3 +1,6 @@
+import { readFile } from 'fs/promises'
+import { homedir } from 'os'
+import { join } from 'path'
 import { CliRunner, type CliRunnerDeps } from './base'
 
 export interface KimiRunnerDeps extends Partial<CliRunnerDeps> {
@@ -30,9 +33,6 @@ export interface KimiRunnerDeps extends Partial<CliRunnerDeps> {
  * Auth is pulled from FIREWORKS_API_KEY (env or ~/.claude/env/personal.env
  * as a fallback, per the script). The Electron main process inherits the
  * user's env by default, so no extra wiring is needed.
- *
- * Availability: probes `python` on PATH. Users without Python installed
- * will see Raven-Prime rendered as NOT DEPLOYABLE.
  */
 export class KimiRunner extends CliRunner {
   protected command = 'python'
@@ -41,6 +41,33 @@ export class KimiRunner extends CliRunner {
   constructor(deps: KimiRunnerDeps) {
     super(deps)
     this.scriptPath = deps.scriptPath
+  }
+
+  // A Python-only probe can mark Raven-Prime deployable when the wrapper will fail authentication.
+  async isAvailable(): Promise<boolean> {
+    const [pythonPath, apiKey] = await Promise.all([this.which(this.command), this.getApiKey()])
+    return pythonPath !== null && apiKey !== null
+  }
+
+  private async getApiKey(): Promise<string | null> {
+    const envKey = process.env.FIREWORKS_API_KEY
+    if (envKey) return envKey
+
+    try {
+      const contents = await readFile(join(homedir(), '.claude', 'env', 'personal.env'), 'utf8')
+      const prefix = 'FIREWORKS_API_KEY='
+
+      for (const rawLine of contents.split(/\r?\n/)) {
+        const line = rawLine.trim()
+        if (line.startsWith(prefix) && !line.startsWith('#')) {
+          return line.slice(prefix.length).trim() || null
+        }
+      }
+    } catch {
+      return null
+    }
+
+    return null
   }
 
   protected buildArgs(_prompt: string): string[] {

@@ -1,6 +1,16 @@
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EventEmitter } from 'events'
+import { join } from 'path'
 import { Readable } from 'stream'
+
+const kimiMocks = vi.hoisted(() => ({
+  readFile: vi.fn(),
+  homedir: vi.fn()
+}))
+
+vi.mock('fs/promises', () => ({ readFile: kimiMocks.readFile }))
+vi.mock('os', () => ({ homedir: kimiMocks.homedir }))
+
 import { KimiRunner } from '../../src/main/runners/kimi'
 
 /**
@@ -8,7 +18,7 @@ import { KimiRunner } from '../../src/main/runners/kimi'
  * (scripts/kimi_fireworks.py), not the native Moonshot `kimi` CLI.
  *
  * These tests lock in:
- *   1. isAvailable() probes `python` on PATH
+ *   1. availability requires both Python and the wrapper's Fireworks key
  *   2. argv is `[<scriptPath>, '-', '-v', '--narrate']` — the trailing
  *      '-' tells the wrapper to read the prompt from stdin; '--narrate'
  *      opts into the [INTENT]/[FINDINGS] chain-of-thought narration
@@ -44,19 +54,67 @@ function makeFakeChild(): FakeChild {
 }
 
 const SCRIPT = '/fake/abs/path/kimi_fireworks.py'
+const originalFireworksKey = process.env.FIREWORKS_API_KEY
+
+beforeEach(() => {
+  delete process.env.FIREWORKS_API_KEY
+  kimiMocks.homedir.mockReset()
+  kimiMocks.homedir.mockReturnValue('/fake/home')
+  kimiMocks.readFile.mockReset()
+  kimiMocks.readFile.mockRejectedValue(new Error('ENOENT'))
+})
+
+afterEach(() => {
+  if (originalFireworksKey === undefined) {
+    delete process.env.FIREWORKS_API_KEY
+  } else {
+    process.env.FIREWORKS_API_KEY = originalFireworksKey
+  }
+})
 
 describe('KimiRunner (Fireworks wrapper)', () => {
-  it('probes `python` for availability', async () => {
-    const probed: string[] = []
+  describe.each([
+    { pythonPresent: false, envKeyPresent: false, fileKeyPresent: false },
+    { pythonPresent: false, envKeyPresent: false, fileKeyPresent: true },
+    { pythonPresent: false, envKeyPresent: true, fileKeyPresent: false },
+    { pythonPresent: false, envKeyPresent: true, fileKeyPresent: true },
+    { pythonPresent: true, envKeyPresent: false, fileKeyPresent: false },
+    { pythonPresent: true, envKeyPresent: false, fileKeyPresent: true },
+    { pythonPresent: true, envKeyPresent: true, fileKeyPresent: false },
+    { pythonPresent: true, envKeyPresent: true, fileKeyPresent: true }
+  ])(
+    'availability with Python=$pythonPresent, env key=$envKeyPresent, file key=$fileKeyPresent',
+    ({ pythonPresent, envKeyPresent, fileKeyPresent }) => {
+      it('requires Python and either Fireworks key source', async () => {
+        if (envKeyPresent) process.env.FIREWORKS_API_KEY = 'env-fireworks-key'
+        if (fileKeyPresent) {
+          kimiMocks.readFile.mockResolvedValue('FIREWORKS_API_KEY=file-fireworks-key\n')
+        }
+        const which = vi.fn().mockResolvedValue(pythonPresent ? '/usr/local/bin/python' : null)
+        const runner = new KimiRunner({ scriptPath: SCRIPT, which })
+
+        expect(await runner.isAvailable()).toBe(pythonPresent && (envKeyPresent || fileKeyPresent))
+        expect(which).toHaveBeenCalledWith('python')
+        if (envKeyPresent) {
+          expect(kimiMocks.readFile).not.toHaveBeenCalled()
+        } else {
+          expect(kimiMocks.readFile).toHaveBeenCalledWith(
+            join('/fake/home', '.claude', 'env', 'personal.env'),
+            'utf8'
+          )
+        }
+      })
+    }
+  )
+
+  it('does not treat an empty env-file value as a usable Fireworks key', async () => {
+    kimiMocks.readFile.mockResolvedValue('FIREWORKS_API_KEY=\n')
     const runner = new KimiRunner({
       scriptPath: SCRIPT,
-      which: async (cmd: string) => {
-        probed.push(cmd)
-        return '/usr/local/bin/python'
-      }
+      which: async () => '/usr/local/bin/python'
     })
-    expect(await runner.isAvailable()).toBe(true)
-    expect(probed).toEqual(['python'])
+
+    expect(await runner.isAvailable()).toBe(false)
   })
 
   it('invokes python with the script path, `-` (stdin sentinel), `-v`, and `--narrate`', async () => {

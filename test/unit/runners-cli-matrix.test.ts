@@ -1,10 +1,11 @@
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { EventEmitter } from 'events'
 import { Readable } from 'stream'
 import type { Runner } from '../../src/main/runners/types'
 import { ClaudeRunner } from '../../src/main/runners/claude'
 import { CodexRunner } from '../../src/main/runners/codex'
 import { GeminiRunner } from '../../src/main/runners/gemini'
+import { HermesRunner } from '../../src/main/runners/hermes'
 
 /**
  * Every CLI-backed runner shares one spawn implementation (CliRunner
@@ -28,7 +29,10 @@ interface Case {
   Runner: new (deps: unknown) => Runner
   expectedCommand: string
   expectedArgs: (prompt: string) => string[]
+  configure?: () => void
 }
+
+const originalHermesCommand = process.env.MECHBAY_HERMES_CMD
 
 const CASES: Case[] = [
   {
@@ -48,6 +52,15 @@ const CASES: Case[] = [
     Runner: GeminiRunner as never,
     expectedCommand: 'gemini',
     expectedArgs: (p) => ['-p', p, '-o', 'text', '-y']
+  },
+  {
+    label: 'hermes',
+    Runner: HermesRunner as never,
+    expectedCommand: 'custom-agent',
+    expectedArgs: (p) => ['run', '--message', p],
+    configure: () => {
+      process.env.MECHBAY_HERMES_CMD = 'custom-agent run --message {PROMPT}'
+    }
   }
 ]
 
@@ -67,7 +80,23 @@ function makeFakeChild(): EventEmitter & {
   return child
 }
 
-describe.each(CASES)('$label runner', ({ Runner, expectedCommand, expectedArgs }) => {
+beforeEach(() => {
+  delete process.env.MECHBAY_HERMES_CMD
+})
+
+afterEach(() => {
+  if (originalHermesCommand === undefined) {
+    delete process.env.MECHBAY_HERMES_CMD
+  } else {
+    process.env.MECHBAY_HERMES_CMD = originalHermesCommand
+  }
+})
+
+describe.each(CASES)('$label runner', ({ Runner, expectedCommand, expectedArgs, configure }) => {
+  beforeEach(() => {
+    configure?.()
+  })
+
   it('probes the right command for isAvailable', async () => {
     const probed: string[] = []
     const runner = new Runner({
