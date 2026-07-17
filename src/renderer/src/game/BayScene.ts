@@ -2,13 +2,19 @@ import Phaser from 'phaser'
 import type { AppState, Deployment, FacilityType, MechClass } from '../../../shared/types'
 import { bus } from '../bus'
 import { colors, type } from '../theme'
-import { computeFacingFlipX, computeWalkBob } from './bay-animation'
+import { computeFacingFlipX, computeWalkBob, computeWalkFrame } from './bay-animation'
 
 import atlasUrl from '../../../../assets/mechs/atlas-poc.png?url'
 import marauderUrl from '../../../../assets/mechs/marauder-poc.png?url'
 import ravenUrl from '../../../../assets/mechs/raven-poc.png?url'
 import catapultUrl from '../../../../assets/mechs/catapult-poc.png?url'
 import locustUrl from '../../../../assets/mechs/locust-poc.png?url'
+
+import atlasWalkUrl from '../../../../assets/mechs/walk/atlas-walk.png?url'
+import marauderWalkUrl from '../../../../assets/mechs/walk/marauder-walk.png?url'
+import ravenWalkUrl from '../../../../assets/mechs/walk/raven-walk.png?url'
+import catapultWalkUrl from '../../../../assets/mechs/walk/catapult-walk.png?url'
+import locustWalkUrl from '../../../../assets/mechs/walk/locust-walk.png?url'
 
 import securityBayUrl from '../../../../assets/facilities/security-bay-poc.png?url'
 import researchLabUrl from '../../../../assets/facilities/research-lab-poc.png?url'
@@ -32,6 +38,25 @@ const MECH_KEY: Record<MechClass, string> = {
   catapult: 'mech-catapult',
   locust: 'mech-locust'
 }
+
+const MECH_WALK_KEY: Record<MechClass, string> = {
+  atlas: 'mech-atlas-walk',
+  marauder: 'mech-marauder-walk',
+  raven: 'mech-raven-walk',
+  catapult: 'mech-catapult-walk',
+  locust: 'mech-locust-walk'
+}
+
+const MECH_WALK_URL: Record<MechClass, string> = {
+  atlas: atlasWalkUrl,
+  marauder: marauderWalkUrl,
+  raven: ravenWalkUrl,
+  catapult: catapultWalkUrl,
+  locust: locustWalkUrl
+}
+
+/** Cell size of the generated walk sheets (4 frames packed horizontally). */
+const WALK_SHEET_FRAME = 256
 
 const FACILITY_KEY: Record<FacilityType, string> = {
   'security-bay': 'facility-security-bay',
@@ -120,6 +145,13 @@ export class BayScene extends Phaser.Scene {
     this.load.image('mech-raven', ravenUrl)
     this.load.image('mech-catapult', catapultUrl)
     this.load.image('mech-locust', locustUrl)
+
+    for (const mechClass of Object.keys(MECH_WALK_KEY) as MechClass[]) {
+      this.load.spritesheet(MECH_WALK_KEY[mechClass], MECH_WALK_URL[mechClass], {
+        frameWidth: WALK_SHEET_FRAME,
+        frameHeight: WALK_SHEET_FRAME
+      })
+    }
 
     this.load.image('facility-security-bay', securityBayUrl)
     this.load.image('facility-research-lab', researchLabUrl)
@@ -235,6 +267,7 @@ export class BayScene extends Phaser.Scene {
       // this base — tweening toward absolute 1.0 would stretch the mech
       // back to full texture height.
       sprite.setData('baseScaleY', sprite.scaleY)
+      sprite.setData('mechClass', companion.mechClass)
       // Depth by y so mechs further south render on top of mechs further north.
       sprite.setDepth(100 + s.y)
       sprite.setInteractive({ draggable: true, pixelPerfect: false })
@@ -424,6 +457,16 @@ export class BayScene extends Phaser.Scene {
     sprite.scaleY = this.baseScaleY(sprite)
     this.startFootDust(companionId, sprite)
 
+    // Swap to the 4-frame walk sheet for the duration of the walk. Guarded
+    // by textures.exists so a failed sheet load degrades to the gliding
+    // idle sprite instead of Phaser's green __DEFAULT texture.
+    const mechClass = sprite.getData('mechClass') as MechClass | undefined
+    const walkKey = mechClass ? MECH_WALK_KEY[mechClass] : undefined
+    const useWalkFrames =
+      !this.reducedMotion && walkKey !== undefined && this.textures.exists(walkKey)
+    let currentFrame = 0
+    if (useWalkFrames) this.applyMechTexture(sprite, walkKey, 0)
+
     const progress = { t: 0 }
     return new Promise<void>((resolve) => {
       this.tweens.add({
@@ -438,6 +481,13 @@ export class BayScene extends Phaser.Scene {
             sprite.y = baseY
             return
           }
+          if (useWalkFrames) {
+            const frame = computeWalkFrame(tween.elapsed)
+            if (frame !== currentFrame) {
+              currentFrame = frame
+              sprite.setFrame(frame)
+            }
+          }
           const bob = computeWalkBob(tween.elapsed)
           sprite.y = baseY + bob.yOffset
           sprite.angle = bob.angleDeg
@@ -446,12 +496,31 @@ export class BayScene extends Phaser.Scene {
           sprite.x = target.x
           sprite.y = targetY
           sprite.angle = 0
+          if (useWalkFrames && mechClass) this.applyMechTexture(sprite, MECH_KEY[mechClass])
           this.stopFootDust(companionId)
           this.playArrivalBurst(companionId, sprite)
           resolve()
         }
       })
     })
+  }
+
+  /**
+   * Swap a mech sprite's texture (idle art ↔ walk sheet frame) and re-derive
+   * its scale. The idle textures are ~1024px and the walk-sheet cells are
+   * 256px, so the raw scale factor that produces a 96px mech differs ~4×
+   * between them — setDisplaySize + re-capturing baseScaleY on EVERY swap
+   * keeps all relative scale animations (breath, squash) correct. Skipping
+   * the re-capture is the same bug class as the v1.1 absolute-scaleY stretch.
+   */
+  private applyMechTexture(
+    sprite: Phaser.GameObjects.Image,
+    textureKey: string,
+    frame?: number
+  ): void {
+    sprite.setTexture(textureKey, frame)
+    sprite.setDisplaySize(MECH_DISPLAY_SIZE, MECH_DISPLAY_SIZE)
+    sprite.setData('baseScaleY', sprite.scaleY)
   }
 
   /**

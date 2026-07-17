@@ -92,6 +92,9 @@ function App(): React.JSX.Element {
         height: 640
       }
     })
+    // Automation hook: smoke scripts (Playwright-Electron) drive the scene
+    // directly — e.g. walkTo — instead of pixel-hunting the canvas.
+    ;(window as unknown as Record<string, unknown>).__mechbayScene = scene
 
     const offDrop = (payload: { companionId: string; facilityId: string }): void => {
       setPendingDeploy(payload)

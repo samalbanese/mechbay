@@ -2,7 +2,10 @@ import { describe, it, expect } from 'vitest'
 import {
   computeFacingFlipX,
   computeWalkBob,
-  DEFAULT_WALK_BOB
+  computeWalkFrame,
+  DEFAULT_WALK_BOB,
+  WALK_FRAME_COUNT,
+  WALK_FRAME_MS
 } from '../../src/renderer/src/game/bay-animation'
 
 describe('computeFacingFlipX', () => {
@@ -47,5 +50,39 @@ describe('computeWalkBob', () => {
   it('degrades to a flat zero offset when frequency is zero (edge case)', () => {
     const bob = computeWalkBob(1234, { amplitudePx: 3, frequencyHz: 0, swayDeg: 1 })
     expect(bob.yOffset).toBeCloseTo(0, 5)
+  })
+})
+
+describe('computeWalkFrame', () => {
+  it('starts a walk on frame 0', () => {
+    expect(computeWalkFrame(0)).toBe(0)
+  })
+
+  it('advances one frame per frame-duration window', () => {
+    expect(computeWalkFrame(WALK_FRAME_MS)).toBe(1)
+    expect(computeWalkFrame(WALK_FRAME_MS * 2)).toBe(2)
+    expect(computeWalkFrame(WALK_FRAME_MS * 3)).toBe(3)
+  })
+
+  it('wraps back to frame 0 after a full cycle', () => {
+    expect(computeWalkFrame(WALK_FRAME_MS * WALK_FRAME_COUNT)).toBe(0)
+    expect(computeWalkFrame(WALK_FRAME_MS * (WALK_FRAME_COUNT * 5 + 2))).toBe(2)
+  })
+
+  it('stays on the current frame within a frame-duration window', () => {
+    expect(computeWalkFrame(WALK_FRAME_MS - 1)).toBe(0)
+    expect(computeWalkFrame(WALK_FRAME_MS * 2 - 1)).toBe(1)
+  })
+
+  it('clamps negative elapsed time to frame 0 instead of a negative index (edge case)', () => {
+    expect(computeWalkFrame(-50)).toBe(0)
+  })
+
+  it('always returns a valid frame index across a long walk', () => {
+    for (let ms = 0; ms < 20000; ms += 33) {
+      const frame = computeWalkFrame(ms)
+      expect(frame).toBeGreaterThanOrEqual(0)
+      expect(frame).toBeLessThan(WALK_FRAME_COUNT)
+    }
   })
 })

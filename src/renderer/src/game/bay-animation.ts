@@ -52,3 +52,20 @@ export function computeWalkBob(
     angleDeg: Math.sin(cycle + Math.PI / 2) * opts.swayDeg
   }
 }
+
+/** Frames per walk-cycle sheet: contact / passing / contact-mirrored / passing-mirrored. */
+export const WALK_FRAME_COUNT = 4
+
+/** Duration each walk frame is held (~8 fps — reads as heavy machinery, not scurrying). */
+export const WALK_FRAME_MS = 125
+
+/**
+ * Which walk-sheet frame to show at a given elapsed time into a walk.
+ * Pure counterpart to Phaser's anims system — BayScene drives frames from
+ * the walk tween's own onUpdate instead of running a parallel animation,
+ * so frame progress and position progress can never drift apart.
+ */
+export function computeWalkFrame(elapsedMs: number): number {
+  if (elapsedMs <= 0) return 0
+  return Math.floor(elapsedMs / WALK_FRAME_MS) % WALK_FRAME_COUNT
+}
