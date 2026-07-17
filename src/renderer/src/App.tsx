@@ -83,20 +83,54 @@ function App(): React.JSX.Element {
   // Mount Phaser once
   useEffect(() => {
     if (!canvasParentRef.current || gameRef.current) return
+    const parent = canvasParentRef.current
     const scene = new BayScene()
     sceneRef.current = scene
+
+    // Render the canvas at the window's true device-pixel resolution instead
+    // of a fixed 1100×640 raster. On a maximized 4K window that fixed raster
+    // was being CSS-upscaled ~3× by Scale.FIT, turning text and sprites to
+    // mush. We create the game at (base × renderScale) where renderScale
+    // covers the displayed width at full device DPR; BayScene scales the
+    // camera zoom by the same factor so the framing is unchanged, just sharp.
+    const BASE_W = 1100
+    const BASE_H = 640
+    const computeRenderScale = (): number => {
+      const dpr = window.devicePixelRatio || 1
+      const cssW = parent.clientWidth || window.innerWidth
+      // Cap at 4× so an enormous display can't blow up the GPU backing store.
+      return Math.min(Math.max((cssW * dpr) / BASE_W, 1), 4)
+    }
+    const initialScale = computeRenderScale()
+
     gameRef.current = new Phaser.Game({
       type: Phaser.AUTO,
-      parent: canvasParentRef.current,
+      parent,
       backgroundColor: '#0a0805',
       scene,
       scale: {
         mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH,
-        width: 1100,
-        height: 640
+        width: Math.round(BASE_W * initialScale),
+        height: Math.round(BASE_H * initialScale)
       }
     })
+
+    // Re-render at native resolution when the window is resized/maximized.
+    // Debounced to an animation frame so a drag-resize doesn't thrash the
+    // WebGL backing store. setGameSize emits Phaser's RESIZE event, which
+    // BayScene listens for to re-derive zoom and re-center the world.
+    let resizeRaf = 0
+    const resizeObserver = new ResizeObserver(() => {
+      cancelAnimationFrame(resizeRaf)
+      resizeRaf = requestAnimationFrame(() => {
+        const game = gameRef.current
+        if (!game) return
+        const scale = computeRenderScale()
+        game.scale.setGameSize(Math.round(BASE_W * scale), Math.round(BASE_H * scale))
+      })
+    })
+    resizeObserver.observe(parent)
     // Automation hook: smoke scripts (Playwright-Electron) drive the scene
     // directly — e.g. walkTo — instead of pixel-hunting the canvas.
     ;(window as unknown as Record<string, unknown>).__mechbayScene = scene
@@ -188,6 +222,8 @@ function App(): React.JSX.Element {
       bus.off('facilityClicked', offFacility)
       bus.off('facilityRightClicked', offFacilityRightClick)
       bus.off('emptyTileClicked', offEmptyTile)
+      resizeObserver.disconnect()
+      cancelAnimationFrame(resizeRaf)
       gameRef.current?.destroy(true)
       gameRef.current = null
       sceneRef.current = null

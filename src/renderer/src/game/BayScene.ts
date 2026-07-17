@@ -32,6 +32,26 @@ const GRID_W = 16
 const GRID_H = 16
 const DROP_RADIUS = 100
 
+/**
+ * Logical design viewport the camera framing was tuned against, and the
+ * camera zoom at that framing. The Phaser game is actually created at
+ * (BASE_VIEW × renderScale) so the canvas renders at the window's true
+ * device-pixel resolution (see applyResolution) — the zoom scales by the
+ * same factor so the world framing stays put while gaining sharpness.
+ */
+const BASE_VIEW_W = 1100
+const BASE_ZOOM = 0.65
+
+/**
+ * Heavy-mech walk feel. Mechs move at a constant ground speed (world px per
+ * second) rather than a fixed per-walk duration, so a long trek across the
+ * bay reads as the same deliberate, weighty pace as a short hop — never a
+ * sprint. Clamped so pathological short/long distances still feel right.
+ */
+const WALK_SPEED_PX_PER_SEC = 130
+const WALK_MIN_MS = 1400
+const WALK_MAX_MS = 5200
+
 const MECH_KEY: Record<MechClass, string> = {
   atlas: 'mech-atlas',
   marauder: 'mech-marauder',
@@ -179,12 +199,12 @@ export class BayScene extends Phaser.Scene {
     this.reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     this.cameras.main.setBackgroundColor('#0a0805')
     this.input.mouse?.disableContextMenu()
-    // Center camera on the geometric middle of the 16×16 iso diamond.
-    // Center tile is (GRID_W/2, GRID_H/2) which iso-maps to (0, GRID_H*TILE_H/2).
-    const center = isoToScreen({ x: GRID_W / 2, y: GRID_H / 2 })
-    this.cameras.main.centerOn(center.x, center.y)
-    // Zoom out enough to show the whole bay in a ~1100×640 viewport.
-    this.cameras.main.setZoom(0.65)
+    // Frame the bay and match the camera zoom to the render resolution. Also
+    // re-run it whenever the canvas is resized (window maximize, HiDPI change)
+    // so the world stays centered and crisp — re-centering on every resize is
+    // what keeps Scale drift (the "bay slowly scrolls up" bug) from creeping in.
+    this.applyResolution()
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.applyResolution, this)
     this.generateSmokeTexture()
     this.drawGround()
     if (this.state) this.render()
@@ -215,6 +235,25 @@ export class BayScene extends Phaser.Scene {
         bus.emit('emptyTileClicked', { tile })
       }
     )
+  }
+
+  /**
+   * Keep the world framing identical across displays while rendering at the
+   * canvas's true device-pixel resolution. The Phaser game is created at
+   * (BASE_VIEW × renderScale), so the WebGL backing store matches the real
+   * pixels of a large or HiDPI window instead of a fixed 1100×640 raster that
+   * Scale.FIT then upscales into blur. Because the viewport grew by
+   * renderScale, the camera zoom grows by the same factor to show the exact
+   * same slice of the world — text and sprites gain resolution, the framing
+   * does not move.
+   */
+  private applyResolution(): void {
+    const renderScale = this.scale.gameSize.width / BASE_VIEW_W
+    this.cameras.main.setZoom(BASE_ZOOM * renderScale)
+    // Center on the geometric middle of the 16×16 iso diamond. Center tile is
+    // (GRID_W/2, GRID_H/2), which iso-maps to (0, GRID_H*TILE_H/2).
+    const center = isoToScreen({ x: GRID_W / 2, y: GRID_H / 2 })
+    this.cameras.main.centerOn(center.x, center.y)
   }
 
   /**
@@ -491,6 +530,16 @@ export class BayScene extends Phaser.Scene {
     let currentFrame = 0
     if (useWalkFrames) this.applyMechTexture(sprite, walkKey, 0)
 
+    // Constant ground speed → duration scales with how far the mech walks,
+    // so every deploy reads as the same heavy, deliberate trudge regardless
+    // of distance (a fixed duration made long walks look like a sprint).
+    const walkDist = Math.hypot(target.x - startX, targetY - startY)
+    const walkDuration = Phaser.Math.Clamp(
+      (walkDist / WALK_SPEED_PX_PER_SEC) * 1000,
+      WALK_MIN_MS,
+      WALK_MAX_MS
+    )
+
     const progress = { t: 0 }
     let resolveWalk!: () => void
     const promise = new Promise<void>((resolve) => {
@@ -500,7 +549,7 @@ export class BayScene extends Phaser.Scene {
     tween = this.tweens.add({
       targets: progress,
       t: 1,
-      duration: 1500,
+      duration: walkDuration,
       ease: 'Sine.easeInOut',
       onUpdate: (tween) => {
         sprite.x = Phaser.Math.Linear(startX, target.x, progress.t)
@@ -960,6 +1009,7 @@ export class BayScene extends Phaser.Scene {
    * Electron-single-scene app, but trivial to get right).
    */
   shutdown(): void {
+    this.scale.off(Phaser.Scale.Events.RESIZE, this.applyResolution, this)
     for (const companionId of [...this.activeWalks.keys()]) {
       this.cancelActiveWalk(companionId)
     }
