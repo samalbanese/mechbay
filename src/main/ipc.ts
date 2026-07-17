@@ -150,6 +150,11 @@ export function registerIpc(opts: IpcDeps): void {
       const facility = s.facilities.find((f) => f.id === args.facilityId)
       if (!companion) throw new Error(`Companion not found: ${args.companionId}`)
       if (!facility) throw new Error(`Facility not found: ${args.facilityId}`)
+      if (!facility.path) {
+        throw new Error(
+          `${facility.name} isn't linked to a project folder yet — use BULK IMPORT (top bar) or click an empty tile to place a facility linked to a real project.`
+        )
+      }
 
       const activeCount = s.deployments.filter((d) => ACTIVE_STATUSES.includes(d.status)).length
       const status: DeploymentStatus =

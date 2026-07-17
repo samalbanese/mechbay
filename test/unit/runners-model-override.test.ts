@@ -16,15 +16,26 @@ import { KimiRunner } from '../../src/main/runners/kimi'
 function makeFakeChild(): EventEmitter & {
   stdout: Readable
   stderr: Readable
+  stdin: {
+    write: ReturnType<typeof vi.fn>
+    end: ReturnType<typeof vi.fn>
+    on: ReturnType<typeof vi.fn>
+  }
   kill: ReturnType<typeof vi.fn>
 } {
   const child = new EventEmitter() as EventEmitter & {
     stdout: Readable
     stderr: Readable
+    stdin: {
+      write: ReturnType<typeof vi.fn>
+      end: ReturnType<typeof vi.fn>
+      on: ReturnType<typeof vi.fn>
+    }
     kill: ReturnType<typeof vi.fn>
   }
   child.stdout = Readable.from([])
   child.stderr = Readable.from([])
+  child.stdin = { write: vi.fn(), end: vi.fn(), on: vi.fn() }
   child.kill = vi.fn()
   return child
 }
@@ -42,7 +53,9 @@ describe('ClaudeRunner model pass-through', () => {
     })
 
     await runner.spawn('/tmp', 'say hi', { model: 'claude-opus-4-8' })
-    expect(spawnCalls).toEqual([['claude', ['-p', 'say hi', '--model', 'claude-opus-4-8']]])
+    expect(spawnCalls).toEqual([['claude', ['-p', '--model', 'claude-opus-4-8']]])
+    expect(child.stdin.write).toHaveBeenCalledWith('say hi')
+    expect(child.stdin.end).toHaveBeenCalled()
   })
 
   it('omits --model entirely when no override is set', async () => {
@@ -57,12 +70,14 @@ describe('ClaudeRunner model pass-through', () => {
     })
 
     await runner.spawn('/tmp', 'say hi')
-    expect(spawnCalls).toEqual([['claude', ['-p', 'say hi']]])
+    expect(spawnCalls).toEqual([['claude', ['-p']]])
+    expect(child.stdin.write).toHaveBeenCalledWith('say hi')
+    expect(child.stdin.end).toHaveBeenCalled()
   })
 })
 
 describe('CodexRunner model pass-through', () => {
-  it('inserts -m <model> between exec and the prompt', async () => {
+  it('inserts -m <model> between exec and the stdin sentinel', async () => {
     const spawnCalls: Array<[string, string[]]> = []
     const child = makeFakeChild()
     const runner = new CodexRunner({
@@ -74,7 +89,9 @@ describe('CodexRunner model pass-through', () => {
     })
 
     await runner.spawn('/tmp', 'refactor this', { model: 'gpt-5.6-terra' })
-    expect(spawnCalls).toEqual([['codex', ['exec', '-m', 'gpt-5.6-terra', 'refactor this']]])
+    expect(spawnCalls).toEqual([['codex', ['exec', '-m', 'gpt-5.6-terra', '-']]])
+    expect(child.stdin.write).toHaveBeenCalledWith('refactor this')
+    expect(child.stdin.end).toHaveBeenCalled()
   })
 
   it('omits -m entirely when no override is set', async () => {
@@ -89,7 +106,9 @@ describe('CodexRunner model pass-through', () => {
     })
 
     await runner.spawn('/tmp', 'refactor this')
-    expect(spawnCalls).toEqual([['codex', ['exec', 'refactor this']]])
+    expect(spawnCalls).toEqual([['codex', ['exec', '-']]])
+    expect(child.stdin.write).toHaveBeenCalledWith('refactor this')
+    expect(child.stdin.end).toHaveBeenCalled()
   })
 })
 
@@ -107,8 +126,10 @@ describe('GeminiRunner model pass-through', () => {
 
     await runner.spawn('/tmp', 'summarize', { model: 'gemini-3-pro' })
     expect(spawnCalls).toEqual([
-      ['gemini', ['-p', 'summarize', '-o', 'text', '-y', '-m', 'gemini-3-pro']]
+      ['gemini', ['-o', 'text', '-y', '-m', 'gemini-3-pro']]
     ])
+    expect(child.stdin.write).toHaveBeenCalledWith('summarize')
+    expect(child.stdin.end).toHaveBeenCalled()
   })
 
   it('omits -m entirely when no override is set', async () => {
@@ -123,7 +144,9 @@ describe('GeminiRunner model pass-through', () => {
     })
 
     await runner.spawn('/tmp', 'summarize')
-    expect(spawnCalls).toEqual([['gemini', ['-p', 'summarize', '-o', 'text', '-y']]])
+    expect(spawnCalls).toEqual([['gemini', ['-o', 'text', '-y']]])
+    expect(child.stdin.write).toHaveBeenCalledWith('summarize')
+    expect(child.stdin.end).toHaveBeenCalled()
   })
 })
 

@@ -1,11 +1,15 @@
 import { spawn as nodeSpawn, ChildProcess } from 'child_process'
+import crossSpawn from 'cross-spawn'
 import type { Runner, RunnerSpawnOptions, SpawnResult, RunnerChunk } from './types'
 
 /**
  * Shared plumbing for CLI-backed runners (Claude/Codex/Kimi/Gemini).
- * Subclasses only declare the command name and how to build argv from
- * the prompt — the spawn/stream/abort/error handling is centralized so
- * a fix to one runner automatically fixes all of them.
+ * cross-spawn resolves Windows .cmd/.bat shims and handles argument
+ * escaping; plain child_process.spawn cannot launch npm shims with
+ * shell: false. Prompts are delivered through stdin because they combine
+ * soul.md, memory.md, and task text: arbitrary content that can exceed
+ * Windows' ~32k argv ceiling and would require shell quoting through
+ * cmd.exe. stdin avoids both limits while keeping shell: false.
  *
  * HermesRunner doesn't use this base — it runs a non-CLI backend.
  */
@@ -31,7 +35,7 @@ export abstract class CliRunner implements Runner {
 
   constructor(deps: Partial<CliRunnerDeps> = {}) {
     this.which = deps.which ?? defaultWhich
-    this.spawnProcess = deps.spawnProcess ?? nodeSpawn
+    this.spawnProcess = deps.spawnProcess ?? (crossSpawn as typeof nodeSpawn)
   }
 
   /** The executable to look up on PATH and invoke. */

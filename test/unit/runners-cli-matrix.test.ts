@@ -39,19 +39,19 @@ const CASES: Case[] = [
     label: 'claude',
     Runner: ClaudeRunner as never,
     expectedCommand: 'claude',
-    expectedArgs: (p) => ['-p', p]
+    expectedArgs: () => ['-p']
   },
   {
     label: 'codex',
     Runner: CodexRunner as never,
     expectedCommand: 'codex',
-    expectedArgs: (p) => ['exec', p]
+    expectedArgs: () => ['exec', '-']
   },
   {
     label: 'gemini',
     Runner: GeminiRunner as never,
     expectedCommand: 'gemini',
-    expectedArgs: (p) => ['-p', p, '-o', 'text', '-y']
+    expectedArgs: () => ['-o', 'text', '-y']
   },
   {
     label: 'hermes',
@@ -137,5 +137,23 @@ describe.each(CASES)('$label runner', ({ Runner, expectedCommand, expectedArgs, 
     for await (const c of result.stream) chunks.push(c.text)
     expect(chunks.join('')).toContain('ENOENT')
     expect(await result.exit).toBe(-1)
+  })
+})
+
+describe('CliRunner spawn safety', () => {
+  it('uses the injected spawnProcess with shell disabled', async () => {
+    const child = makeFakeChild()
+    const spawnProcess = vi.fn(() => child)
+    const runner = new ClaudeRunner({
+      which: async () => '/fake/claude',
+      spawnProcess: spawnProcess as never
+    })
+
+    await runner.spawn('/tmp/project', 'say hi')
+
+    expect(spawnProcess).toHaveBeenCalledWith('claude', ['-p'], {
+      cwd: '/tmp/project',
+      shell: false
+    })
   })
 })
