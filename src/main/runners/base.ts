@@ -58,10 +58,16 @@ export abstract class CliRunner implements Runner {
   }
 
   async spawn(cwd: string, prompt: string, options?: RunnerSpawnOptions): Promise<SpawnResult> {
-    const child = this.spawnProcess(this.command, this.buildArgs(prompt, options?.model), {
+    const spawnOptions = {
       cwd,
-      shell: false
-    })
+      shell: false,
+      ...(options?.env ? { env: { ...process.env, ...options.env } } : {})
+    }
+    const child = this.spawnProcess(
+      this.command,
+      this.buildArgs(prompt, options?.model),
+      spawnOptions
+    )
 
     const stdinPayload = this.stdinInput(prompt)
     if (stdinPayload !== null && child.stdin) {

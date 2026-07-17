@@ -11,6 +11,8 @@ export type BusEvents = {
   dropOnFacility: { companionId: string; facilityId: string }
   /** Single-click on a facility (no drag) — opens the file browser. */
   facilityClicked: { facilityId: string }
+  /** Right-click on a facility — requests decommission confirmation. */
+  facilityRightClicked: { facilityId: string }
   /** Mech selected or deselected — drives the companion stats panel. */
   companionSelected: { companionId: string | null }
   /** Click on a tile with no facility / mech on it — triggers place-building flow. */

@@ -14,7 +14,9 @@ import type {
   BulkImportRunResult,
   DiscoveredProject,
   CompanionConfigurePayload,
-  CompanionConfigureResult
+  CompanionConfigureResult,
+  AgentFamily,
+  SimpleActionResult
 } from '../shared/types'
 
 const mechbayApi = {
@@ -42,12 +44,14 @@ const mechbayApi = {
     return () => ipcRenderer.off(IPC.RECOVERY_ZOMBIES, handler)
   },
   fsReadDir: (p: string): Promise<FsNode[]> => ipcRenderer.invoke(IPC.FS_READ_DIR, { path: p }),
-  fsReadFile: (p: string): Promise<string> =>
-    ipcRenderer.invoke(IPC.FS_READ_FILE, { path: p }),
+  fsReadFile: (p: string): Promise<string> => ipcRenderer.invoke(IPC.FS_READ_FILE, { path: p }),
   addFacilityFromPicker: (tile: { x: number; y: number }): Promise<Facility | null> =>
     ipcRenderer.invoke(IPC.FACILITY_ADD_FROM_PICKER, { tile }),
   linkFacility: (facilityId: string): Promise<Facility | null> =>
     ipcRenderer.invoke(IPC.FACILITY_LINK, { facilityId }),
+  facilityRemove: (facilityId: string): Promise<SimpleActionResult> =>
+    ipcRenderer.invoke(IPC.FACILITY_REMOVE, { facilityId }),
+  fieldReset: (): Promise<SimpleActionResult> => ipcRenderer.invoke(IPC.FIELD_RESET),
   // Soul/Memory IPC for Journal tab
   soulRead: (companionId: string): Promise<SoulReadResult> =>
     ipcRenderer.invoke(IPC.SOUL_READ, { companionId }),
@@ -62,7 +66,10 @@ const mechbayApi = {
     ipcRenderer.invoke(IPC.BULK_IMPORT_RUN, { selectedPaths }),
   // Runtime reassignment IPC
   configureCompanion: (payload: CompanionConfigurePayload): Promise<CompanionConfigureResult> =>
-    ipcRenderer.invoke(IPC.COMPANION_CONFIGURE, payload)
+    ipcRenderer.invoke(IPC.COMPANION_CONFIGURE, payload),
+  secretsSet: (runtime: AgentFamily, value: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke(IPC.SECRETS_SET, { runtime, value }),
+  secretsStatus: (): Promise<Record<AgentFamily, boolean>> => ipcRenderer.invoke(IPC.SECRETS_STATUS)
 }
 
 export type MechBayApi = typeof mechbayApi

@@ -4,7 +4,11 @@ import { IPC } from '../../src/shared/ipc-channels'
 import { StateManager, type StoreLike } from '../../src/main/state-manager'
 import { FsReader } from '../../src/main/fs-reader'
 import type { Runner, SpawnResult } from '../../src/main/runners/types'
-import type { AgentFamily, CompanionConfigurePayload, CompanionConfigureResult } from '../../src/shared/types'
+import type {
+  AgentFamily,
+  CompanionConfigurePayload,
+  CompanionConfigureResult
+} from '../../src/shared/types'
 
 /**
  * COMPANION_CONFIGURE is the IPC handler behind the RUNTIME reassignment
@@ -84,7 +88,7 @@ describe('IPC.COMPANION_CONFIGURE handler', () => {
       hermes: stubRunner(runnerAvailability.hermes ?? false)
     }
     const fsReader = new FsReader([])
-    registerIpc({ win: makeFakeWin(), state, runners, fsReader })
+    registerIpc({ win: makeFakeWin(), state, runners, fsReader, secrets: {} as never })
     const handler = registeredHandlers.get(IPC.COMPANION_CONFIGURE)
     if (!handler) throw new Error('COMPANION_CONFIGURE handler was not registered')
     return { state, handler }
@@ -174,5 +178,27 @@ describe('IPC.COMPANION_CONFIGURE handler', () => {
     expect(result.ok).toBe(true)
     const cleared = state.getState().companions.find((c) => c.id === companion.id)!
     expect(cleared.model).toBeUndefined()
+  })
+
+  it('updates a trimmed name without changing runtime configuration', async () => {
+    const { state, handler } = setup()
+    const companion = state.getState().companions[0]
+    const result = await invokeConfigure(handler, {
+      companionId: companion.id,
+      name: '  Scout  '
+    })
+    expect(result.ok).toBe(true)
+    const updated = state.getState().companions[0]
+    expect(updated.name).toBe('Scout')
+    expect(updated.runtime).toBeUndefined()
+  })
+
+  it.each(['', 'x'.repeat(25)])('rejects invalid name %j', async (name) => {
+    const { state, handler } = setup()
+    const companion = state.getState().companions[0]
+    expect(await invokeConfigure(handler, { companionId: companion.id, name })).toEqual({
+      ok: false,
+      error: 'Name must be 1-24 characters'
+    })
   })
 })

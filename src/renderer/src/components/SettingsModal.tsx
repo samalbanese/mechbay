@@ -1,0 +1,434 @@
+import { useEffect, useRef, useState } from 'react'
+import type { AgentFamily, Companion } from '../../../shared/types'
+import { RUNTIME_ENV, RUNTIME_OPTIONS } from '../runtime-options'
+import { colors, type } from '../theme'
+
+interface SettingsModalProps {
+  companions: Companion[]
+  onClose: () => void
+}
+
+type SecretStatus = Record<AgentFamily, boolean>
+
+const EMPTY_STATUS: SecretStatus = {
+  claude: false,
+  codex: false,
+  kimi: false,
+  gemini: false,
+  hermes: false
+}
+
+export function SettingsModal({ companions, onClose }: SettingsModalProps): React.JSX.Element {
+  const [secretStatus, setSecretStatus] = useState<SecretStatus>(EMPTY_STATUS)
+  const closeRef = useRef<HTMLButtonElement>(null)
+
+  const refreshStatus = async (): Promise<void> => {
+    setSecretStatus(await window.mechbay.secretsStatus())
+  }
+
+  useEffect(() => {
+    void refreshStatus()
+    closeRef.current?.focus()
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const resetField = async (): Promise<void> => {
+    if (
+      !confirm(
+        'Reset the bay to the six starter buildings? All placed/imported buildings are removed (project folders on disk are untouched).'
+      )
+    ) {
+      return
+    }
+    const result = await window.mechbay.fieldReset()
+    if (!result.ok) alert(result.error)
+  }
+
+  return (
+    <div
+      style={backdropStyle}
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <section
+        className="mech-settings-panel"
+        style={panelStyle}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+      >
+        <header style={headerStyle}>
+          <div>
+            <div id="settings-title" style={titleStyle}>
+              MECH SETTINGS
+            </div>
+            <div style={subtitleStyle}>CALLSIGNS · RUNTIME LOADOUT · LAUNCH CREDENTIALS</div>
+          </div>
+          <button
+            ref={closeRef}
+            type="button"
+            onClick={onClose}
+            style={closeStyle}
+            aria-label="Close settings"
+          >
+            ×
+          </button>
+        </header>
+
+        <div style={manifestStyle}>
+          {companions.map((companion, index) => (
+            <MechSettingsRow
+              key={companion.id}
+              companion={companion}
+              index={index + 1}
+              secretStatus={secretStatus}
+              refreshStatus={refreshStatus}
+            />
+          ))}
+        </div>
+
+        <section style={bayStyle}>
+          <div>
+            <div style={sectionLabelStyle}>BAY</div>
+            <div style={bayHintStyle}>
+              Restore the six starter buildings with fresh IDs. Project folders remain untouched.
+            </div>
+          </div>
+          <button type="button" style={dangerButtonStyle} onClick={() => void resetField()}>
+            RESET FIELD
+          </button>
+        </section>
+      </section>
+      <style>{`
+        @keyframes settingsDock { from { opacity: 0; transform: translateY(10px) scale(.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        @media (prefers-reduced-motion: reduce) { .mech-settings-panel { animation: none !important; } }
+      `}</style>
+    </div>
+  )
+}
+
+function MechSettingsRow({
+  companion,
+  index,
+  secretStatus,
+  refreshStatus
+}: {
+  companion: Companion
+  index: number
+  secretStatus: SecretStatus
+  refreshStatus: () => Promise<void>
+}): React.JSX.Element {
+  const [name, setName] = useState(companion.name)
+  const [runtime, setRuntime] = useState<AgentFamily>(companion.runtime ?? companion.family)
+  const [model, setModel] = useState(companion.model ?? '')
+  const [keyValue, setKeyValue] = useState('')
+  const [pending, setPending] = useState<'name' | 'runtime' | 'key' | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const configure = async (kind: 'name' | 'runtime'): Promise<void> => {
+    setPending(kind)
+    setError(null)
+    try {
+      const result = await window.mechbay.configureCompanion(
+        kind === 'name'
+          ? { companionId: companion.id, name }
+          : { companionId: companion.id, runtime, model }
+      )
+      if (!result.ok) setError(result.error)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setPending(null)
+    }
+  }
+
+  const saveSecret = async (value: string): Promise<void> => {
+    setPending('key')
+    setError(null)
+    try {
+      const result = await window.mechbay.secretsSet(runtime, value)
+      if (!result.ok) {
+        setError(result.error ?? 'Could not save key')
+        return
+      }
+      setKeyValue('')
+      await refreshStatus()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setPending(null)
+    }
+  }
+
+  const envName = RUNTIME_ENV[runtime]
+
+  return (
+    <article style={rowStyle}>
+      <div style={rowHeadingStyle}>
+        <span style={indexStyle}>{String(index).padStart(2, '0')}</span>
+        <span style={mechClassStyle}>{companion.mechClass.toUpperCase()}</span>
+        <span style={familyStyle}>FRAME: {companion.family.toUpperCase()}</span>
+      </div>
+
+      <div style={controlGridStyle}>
+        <label style={fieldStyle}>
+          <span style={labelStyle}>CALLSIGN</span>
+          <span style={inlineControlStyle}>
+            <input
+              style={inputStyle}
+              value={name}
+              maxLength={24}
+              onChange={(event) => setName(event.target.value)}
+            />
+            <button
+              type="button"
+              style={actionButtonStyle}
+              disabled={pending !== null}
+              onClick={() => void configure('name')}
+            >
+              SAVE
+            </button>
+          </span>
+        </label>
+
+        <label style={fieldStyle}>
+          <span style={labelStyle}>RUNTIME / MODEL</span>
+          <span style={inlineControlStyle}>
+            <select
+              style={{ ...inputStyle, flex: '0 0 150px' }}
+              value={runtime}
+              onChange={(event) => {
+                setRuntime(event.target.value as AgentFamily)
+                setKeyValue('')
+                setError(null)
+              }}
+            >
+              {RUNTIME_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <input
+              style={inputStyle}
+              value={model}
+              placeholder="model override (optional)"
+              onChange={(event) => setModel(event.target.value)}
+            />
+            <button
+              type="button"
+              style={actionButtonStyle}
+              disabled={pending !== null}
+              onClick={() => void configure('runtime')}
+            >
+              APPLY
+            </button>
+          </span>
+        </label>
+
+        <div style={fieldStyle}>
+          <span style={labelStyle}>API KEY</span>
+          {runtime === 'claude' ? (
+            <div style={loginNoteStyle}>Uses Claude Code login — no key needed</div>
+          ) : (
+            <>
+              <div style={inlineControlStyle}>
+                <input
+                  style={inputStyle}
+                  type="password"
+                  autoComplete="off"
+                  value={keyValue}
+                  placeholder={secretStatus[runtime] ? '••••••• saved' : 'not set'}
+                  onChange={(event) => setKeyValue(event.target.value)}
+                />
+                <button
+                  type="button"
+                  style={actionButtonStyle}
+                  disabled={pending !== null || !keyValue.trim()}
+                  onClick={() => void saveSecret(keyValue)}
+                >
+                  SAVE
+                </button>
+                <button
+                  type="button"
+                  style={clearButtonStyle}
+                  disabled={pending !== null || !secretStatus[runtime]}
+                  onClick={() => void saveSecret('')}
+                >
+                  CLEAR
+                </button>
+              </div>
+              <div style={keyHintStyle}>stored encrypted · injected as {envName}</div>
+            </>
+          )}
+        </div>
+      </div>
+      {error && <div style={errorStyle}>⚠ {error}</div>}
+    </article>
+  )
+}
+
+const backdropStyle: React.CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  zIndex: 120,
+  background: colors.overlay,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 24
+}
+const panelStyle: React.CSSProperties = {
+  width: 'min(980px, 94vw)',
+  maxHeight: '88vh',
+  overflow: 'auto',
+  background: colors.bgHud,
+  border: `2px solid ${colors.orange}`,
+  boxShadow: `0 0 34px ${colors.orangeGlow}`,
+  fontFamily: type.mono,
+  color: colors.textPrimary,
+  animation: 'settingsDock .24s ease-out'
+}
+const headerStyle: React.CSSProperties = {
+  position: 'sticky',
+  top: 0,
+  zIndex: 2,
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  padding: '16px 18px',
+  background: colors.bgHud,
+  borderBottom: `1px solid ${colors.orange}`
+}
+const titleStyle: React.CSSProperties = {
+  color: colors.amber,
+  fontSize: 17,
+  fontWeight: 800,
+  letterSpacing: type.labelTracking
+}
+const subtitleStyle: React.CSSProperties = {
+  marginTop: 4,
+  color: colors.textSecondary,
+  fontSize: 9,
+  letterSpacing: type.hudTracking
+}
+const closeStyle: React.CSSProperties = {
+  background: 'transparent',
+  border: 0,
+  color: colors.orange,
+  font: 'inherit',
+  fontSize: 22,
+  cursor: 'pointer'
+}
+const manifestStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column' }
+const rowStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '135px 1fr',
+  gap: 16,
+  padding: '14px 18px',
+  borderBottom: `1px solid ${colors.borderHud}`
+}
+const rowHeadingStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 5,
+  borderRight: `1px solid ${colors.borderHud}`,
+  paddingRight: 12
+}
+const indexStyle: React.CSSProperties = {
+  color: colors.orange,
+  fontSize: 9,
+  letterSpacing: type.labelTracking
+}
+const mechClassStyle: React.CSSProperties = { color: colors.amber, fontSize: 13, fontWeight: 800 }
+const familyStyle: React.CSSProperties = { color: colors.textMuted, fontSize: 9 }
+const controlGridStyle: React.CSSProperties = { display: 'grid', gap: 9 }
+const fieldStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '112px 1fr',
+  gap: 10,
+  alignItems: 'center'
+}
+const labelStyle: React.CSSProperties = {
+  color: colors.textSecondary,
+  fontSize: 9,
+  letterSpacing: type.labelTracking
+}
+const inlineControlStyle: React.CSSProperties = { display: 'flex', minWidth: 0, gap: 6 }
+const inputStyle: React.CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  background: colors.bgPanelDark,
+  border: `1px solid ${colors.borderHud}`,
+  color: colors.textPrimary,
+  fontFamily: type.mono,
+  fontSize: 11,
+  padding: '6px 8px',
+  outlineColor: colors.orange
+}
+const actionButtonStyle: React.CSSProperties = {
+  background: colors.amberTint,
+  border: `1px solid ${colors.amber}`,
+  color: colors.amber,
+  fontFamily: type.mono,
+  fontSize: 9,
+  fontWeight: 800,
+  padding: '5px 10px',
+  cursor: 'pointer'
+}
+const clearButtonStyle: React.CSSProperties = {
+  ...actionButtonStyle,
+  background: 'transparent',
+  borderColor: colors.textMuted,
+  color: colors.textSecondary
+}
+const keyHintStyle: React.CSSProperties = {
+  gridColumn: 2,
+  marginTop: 4,
+  color: colors.textMuted,
+  fontSize: 9
+}
+const loginNoteStyle: React.CSSProperties = {
+  color: colors.textSecondary,
+  fontSize: 10,
+  padding: '6px 0'
+}
+const errorStyle: React.CSSProperties = {
+  gridColumn: 2,
+  color: colors.statusFailedLight,
+  fontSize: 10,
+  marginTop: 4
+}
+const bayStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  gap: 20,
+  padding: 18,
+  background: colors.bgPanelDark,
+  borderTop: `1px solid ${colors.orange}`
+}
+const sectionLabelStyle: React.CSSProperties = {
+  color: colors.amber,
+  fontSize: 11,
+  fontWeight: 800,
+  letterSpacing: type.labelTracking
+}
+const bayHintStyle: React.CSSProperties = { color: colors.textSecondary, fontSize: 9, marginTop: 5 }
+const dangerButtonStyle: React.CSSProperties = {
+  background: 'rgba(255,82,82,.07)',
+  border: `1px solid ${colors.statusFailed}`,
+  color: colors.statusFailedLight,
+  fontFamily: type.mono,
+  fontSize: 10,
+  fontWeight: 800,
+  letterSpacing: type.hudTracking,
+  padding: '8px 14px',
+  cursor: 'pointer'
+}

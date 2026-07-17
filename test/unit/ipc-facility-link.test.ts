@@ -39,7 +39,8 @@ function setup(): { state: StateManager; handler: (event: unknown, payload: any)
     win,
     state,
     runners: {} as never,
-    fsReader: { readDir: vi.fn(), readFile: vi.fn(), updateWhitelist: vi.fn() } as never
+    fsReader: { readDir: vi.fn(), readFile: vi.fn(), updateWhitelist: vi.fn() } as never,
+    secrets: {} as never
   })
   const handler = registeredHandlers.get(IPC.FACILITY_LINK)
   if (!handler) throw new Error('FACILITY_LINK handler was not registered')

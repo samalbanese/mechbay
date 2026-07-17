@@ -16,6 +16,7 @@ import { runCliAvailabilityCheck } from './cli-check'
 import { IPC } from '../shared/ipc-channels'
 import type { Runner } from './runners/types'
 import type { AgentFamily } from '../shared/types'
+import { SecretsManager } from './secrets'
 
 function createWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
@@ -62,6 +63,7 @@ app.whenReady().then(() => {
   // ─── MechBay subsystems ───────────────────────────────────────
   const store = new Store({ name: 'mechbay-state' })
   const state = new StateManager(store, app.getPath('userData'))
+  const secrets = new SecretsManager(new Store({ name: 'mechbay-secrets' }))
 
   // Scaffold soul.md + memory.md for every companion on boot. Idempotent:
   // only writes templates if the files don't exist. A companion's
@@ -87,7 +89,7 @@ app.whenReady().then(() => {
   const runners: Record<AgentFamily, Runner> = {
     claude: new ClaudeRunner(),
     codex: new CodexRunner(),
-    kimi: new KimiRunner({ scriptPath: kimiScriptPath }),
+    kimi: new KimiRunner({ scriptPath: kimiScriptPath, secrets }),
     gemini: new GeminiRunner(),
     hermes: new HermesRunner()
   }
@@ -107,7 +109,7 @@ app.whenReady().then(() => {
   const fsReader = new FsReader(buildFsWhitelist())
   state.on('stateChanged', () => fsReader.updateWhitelist(buildFsWhitelist()))
 
-  registerIpc({ win, state, runners, fsReader })
+  registerIpc({ win, state, runners, fsReader, secrets })
 
   // Crash recovery: any deployment stuck in an active status is a
   // zombie from a previous crash or force-quit. Mark them failed and

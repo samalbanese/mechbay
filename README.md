@@ -1,12 +1,12 @@
 # MechBay
 
-*Battletech for AI coding agents.*
+_Battletech for AI coding agents._
 
 MechBay is an Electron desktop app for deploying real coding agents as mech-class companions. Drag a mech onto an isometric facility that represents a real project directory, give it a task, and follow the live output in the command-bay HUD.
 
 ![MechBay — isometric command bay](docs/screenshot-bay.png)
 
-*Demo gif coming soon.*
+_Demo gif coming soon._
 
 ## What it does
 
@@ -18,16 +18,17 @@ MechBay is an Electron desktop app for deploying real coding agents as mech-clas
 - Keeps each mech's `soul.md` and `memory.md` between deployments, with an in-app Journal for editing both.
 - Handles the rough edges: dead-in-field failure states, click-to-recover, and a crash-recovery modal on the next launch.
 - Lets you browse facility files read-only through a whitelist guard, bulk import projects, click an empty bay tile to add a facility from a directory picker, or click an unlinked starter building to connect it to a project directory.
+- Lets you rename mechs and optionally store runtime API keys encrypted by the OS; keys are injected only into that mech's process when a deployment launches.
 
 ## The mechs
 
-| Mech | Class role | Runtime | Requirements |
-| --- | --- | --- | --- |
-| Atlas-Prime | Heavy assault | Claude Code | `claude` on `PATH` |
-| Marauder-Prime | Surgical strike | Codex | `codex` on `PATH` |
-| Raven-Prime | Recon scout | Kimi via Fireworks AI | `python` on `PATH` and `FIREWORKS_API_KEY` |
-| Catapult-Prime | Ranged multimodal | Gemini CLI | `gemini` on `PATH` |
-| Locust-Prime | Swarm courier | Bring your own agent | `MECHBAY_HERMES_CMD` set to a CLI command line |
+| Mech           | Class role        | Runtime               | Requirements                                                       |
+| -------------- | ----------------- | --------------------- | ------------------------------------------------------------------ |
+| Atlas-Prime    | Heavy assault     | Claude Code           | `claude` on `PATH`                                                 |
+| Marauder-Prime | Surgical strike   | Codex                 | `codex` on `PATH`                                                  |
+| Raven-Prime    | Recon scout       | Kimi via Fireworks AI | `python` on `PATH` and a stored or environment `FIREWORKS_API_KEY` |
+| Catapult-Prime | Ranged multimodal | Gemini CLI            | `gemini` on `PATH`                                                 |
+| Locust-Prime   | Swarm courier     | Bring your own agent  | `MECHBAY_HERMES_CMD` set to a CLI command line                     |
 
 An unconfigured mech shows `⚠ NOT DEPLOYABLE`. The rest of the bay remains usable.
 
@@ -38,17 +39,24 @@ Every mech's runtime is reassignable from the UI — you're not stuck with the f
 - Pick any of the five runtimes from a dropdown (the mech's native family is marked `— DEFAULT`).
 - Set an optional model override, passed straight through to that runtime's CLI:
 
-| Runtime | Model flag |
-| --- | --- |
-| Claude Code | `--model` |
-| Codex | `-m` |
-| Gemini CLI | `-m` |
-| Kimi (Fireworks) | `--model` |
-| Custom CLI | `{MODEL}` placeholder in `MECHBAY_HERMES_CMD` |
+| Runtime          | Model flag                                    |
+| ---------------- | --------------------------------------------- |
+| Claude Code      | `--model`                                     |
+| Codex            | `-m`                                          |
+| Gemini CLI       | `-m`                                          |
+| Kimi (Fireworks) | `--model`                                     |
+| Custom CLI       | `{MODEL}` placeholder in `MECHBAY_HERMES_CMD` |
 
 Press **APPLY** and MechBay re-probes availability for the new runtime immediately — the availability badge updates without a restart.
 
-Auth is always the runtime's own — `claude`/`codex` login, `GEMINI_API_KEY`, `FIREWORKS_API_KEY`, or your custom CLI's own environment. MechBay never stores keys; it only remembers which runtime and model you assigned to each mech.
+Open **⚙ SETTINGS** to rename mechs and manage runtime credentials. Claude Code
+continues to use its own login. For Codex, Gemini, Kimi, and custom runtimes,
+MechBay can store a key encrypted by Electron's OS-backed `safeStorage`
+(Windows DPAPI on Windows) and inject it only into that mech's process at
+launch. Keys are never written in plain text or exposed back to the renderer.
+Stored keys are optional: existing environment variables keep working when no
+stored key exists. When both are present, the stored key wins because it is the
+explicit in-app choice.
 
 ## Quickstart
 
@@ -63,11 +71,14 @@ npm run dev
 
 ## Status
 
-**v1.0 — feature-complete MVP.**
+**v1.3 — feature-complete MVP with in-app mech and bay configuration.**
 
 ## Configuring runtimes
 
-MechBay checks runtime availability at startup. Install and authenticate each CLI using its own instructions, then make sure its command is available on `PATH` before launching the app.
+MechBay checks runtime availability at startup. Install each CLI and make sure
+its command is available on `PATH` before launching the app. Authenticate with
+the runtime's own login, an environment variable, or an encrypted key saved in
+**⚙ SETTINGS** where supported.
 
 - **Atlas-Prime / Claude Code:** install Claude Code so `claude` runs from a terminal.
 - **Marauder-Prime / Codex:** install the Codex CLI so `codex` runs from a terminal.

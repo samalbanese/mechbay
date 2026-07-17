@@ -7,14 +7,7 @@ import type {
   Facility
 } from '../../../shared/types'
 import { colors, type } from '../theme'
-
-const RUNTIME_OPTIONS: Array<{ value: AgentFamily; label: string }> = [
-  { value: 'claude', label: 'CLAUDE CODE' },
-  { value: 'codex', label: 'CODEX' },
-  { value: 'gemini', label: 'GEMINI CLI' },
-  { value: 'kimi', label: 'KIMI (FIREWORKS)' },
-  { value: 'hermes', label: 'CUSTOM CLI' }
-]
+import { RUNTIME_OPTIONS } from '../runtime-options'
 
 interface CompanionPanelProps {
   companion: Companion | null
@@ -30,7 +23,11 @@ interface DeploymentHistoryItem {
   relativeTime: string
 }
 
-export function CompanionPanel({ companion, deployments, facilities }: CompanionPanelProps): React.JSX.Element {
+export function CompanionPanel({
+  companion,
+  deployments,
+  facilities
+}: CompanionPanelProps): React.JSX.Element {
   // Build facility lookup map for O(1) access
   const facilityMap = useMemo(() => {
     const map = new Map<string, Facility>()
@@ -56,7 +53,7 @@ export function CompanionPanel({ companion, deployments, facilities }: Companion
         facilityName: facility?.name ?? d.facilityId.slice(0, 8),
         status: d.status,
         startedAt: d.startedAt,
-        relativeTime: formatRelativeTime(d.startedAt),
+        relativeTime: formatRelativeTime(d.startedAt)
       }
     })
   }, [companion, deployments, facilityMap])
@@ -73,7 +70,9 @@ export function CompanionPanel({ companion, deployments, facilities }: Companion
       return 'Never deployed'
     }
 
-    const mostRecent = completedDeployments.sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0))[0]
+    const mostRecent = completedDeployments.sort(
+      (a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0)
+    )[0]
     return `Last active: ${formatRelativeTime(mostRecent.completedAt ?? 0)}`
   }, [companion, deployments])
 
@@ -150,7 +149,7 @@ function DeploymentHistoryRow({ item }: { item: DeploymentHistoryItem }): React.
         style={{
           ...statusDotStyle,
           background: statusConfig.color,
-          ...(statusConfig.pulse ? pulseAnimation : {}),
+          ...(statusConfig.pulse ? pulseAnimation : {})
         }}
         aria-label={`Status: ${item.status}`}
       />
@@ -217,8 +216,7 @@ function RuntimeSection({ companion }: { companion: Companion }): React.JSX.Elem
       </button>
       {error && <div style={runtimeErrorStyle}>{error}</div>}
       <div style={runtimeHintStyle}>
-        Runtimes use their own auth — claude/codex login, GEMINI_API_KEY, FIREWORKS_API_KEY, or
-        your custom CLI&apos;s env. MechBay never stores keys.
+        Configure encrypted API keys and runtime defaults from MECH SETTINGS.
       </div>
     </div>
   )
@@ -263,7 +261,7 @@ const panelStyle: React.CSSProperties = {
   background: colors.bgHud,
   border: `1px solid ${colors.borderHud}`,
   padding: 12,
-  fontSize: 12,
+  fontSize: 12
 }
 
 const emptyPanelStyle: React.CSSProperties = {
@@ -271,7 +269,7 @@ const emptyPanelStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  minHeight: 100,
+  minHeight: 100
 }
 
 const emptyHintStyle: React.CSSProperties = {
@@ -281,41 +279,41 @@ const emptyHintStyle: React.CSSProperties = {
   gap: 8,
   color: colors.textMuted,
   fontSize: 11,
-  textAlign: 'center',
+  textAlign: 'center'
 }
 
 const emptyIconStyle: React.CSSProperties = {
   color: colors.amber,
-  fontSize: 16,
+  fontSize: 16
 }
 
 const headerStyle: React.CSSProperties = {
-  marginBottom: 12,
+  marginBottom: 12
 }
 
 const selectedLabelStyle: React.CSSProperties = {
   color: colors.amber,
   fontSize: 10,
   letterSpacing: type.labelTracking,
-  marginBottom: 4,
+  marginBottom: 4
 }
 
 const nameStyle: React.CSSProperties = {
   fontSize: 18,
   fontWeight: 'bold',
   color: colors.textPrimary,
-  marginBottom: 2,
+  marginBottom: 2
 }
 
 const metaStyle: React.CSSProperties = {
   fontSize: 11,
   color: colors.textSecondary,
   textTransform: 'uppercase',
-  letterSpacing: '0.05em',
+  letterSpacing: '0.05em'
 }
 
 const badgeRowStyle: React.CSSProperties = {
-  marginBottom: 8,
+  marginBottom: 8
 }
 
 const availableBadgeStyle: React.CSSProperties = {
@@ -329,14 +327,14 @@ const availableBadgeStyle: React.CSSProperties = {
   borderRadius: 12,
   fontSize: 10,
   fontWeight: 'bold',
-  letterSpacing: '0.05em',
+  letterSpacing: '0.05em'
 }
 
 const availableDotStyle: React.CSSProperties = {
   width: 6,
   height: 6,
   borderRadius: '50%',
-  background: colors.statusWorking,
+  background: colors.statusWorking
 }
 
 const unavailableBadgeStyle: React.CSSProperties = {
@@ -350,69 +348,69 @@ const unavailableBadgeStyle: React.CSSProperties = {
   borderRadius: 12,
   fontSize: 10,
   fontWeight: 'bold',
-  letterSpacing: '0.05em',
+  letterSpacing: '0.05em'
 }
 
 const unavailableIconStyle: React.CSSProperties = {
-  fontSize: 10,
+  fontSize: 10
 }
 
 const lastActiveStyle: React.CSSProperties = {
   fontSize: 11,
   color: colors.textSecondary,
   marginBottom: 12,
-  fontStyle: 'italic',
+  fontStyle: 'italic'
 }
 
 const historySectionStyle: React.CSSProperties = {
   borderTop: `1px solid ${colors.borderHud}`,
-  paddingTop: 12,
+  paddingTop: 12
 }
 
 const historyHeaderStyle: React.CSSProperties = {
   fontSize: 10,
   color: colors.textMuted,
   letterSpacing: type.labelTracking,
-  marginBottom: 8,
+  marginBottom: 8
 }
 
 const historyListStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
-  gap: 6,
+  gap: 6
 }
 
 const historyRowStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: 6,
-  fontSize: 11,
+  fontSize: 11
 }
 
 const facilityNameStyle: React.CSSProperties = {
   color: colors.textPrimary,
-  fontWeight: 'bold',
+  fontWeight: 'bold'
 }
 
 const separatorDotStyle: React.CSSProperties = {
-  color: colors.textMuted,
+  color: colors.textMuted
 }
 
 const statusDotStyle: React.CSSProperties = {
   display: 'inline-block',
   width: 6,
   height: 6,
-  borderRadius: '50%',
+  borderRadius: '50%'
 }
 
 const pulseAnimation: React.CSSProperties = {
-  animation: 'pulseWorking 2s ease-in-out infinite',
+  animation: 'pulseWorking 2s ease-in-out infinite'
 }
 
 const relativeTimeStyle: React.CSSProperties = {
   color: colors.textSecondary,
   fontSize: 10,
-  marginLeft: 'auto',
+  marginLeft: 'auto'
 }
 
 const runtimeSectionStyle: React.CSSProperties = {
@@ -422,14 +420,14 @@ const runtimeSectionStyle: React.CSSProperties = {
   borderTop: `1px solid ${colors.borderHud}`,
   borderBottom: `1px solid ${colors.borderHud}`,
   padding: '10px 0',
-  marginBottom: 12,
+  marginBottom: 12
 }
 
 const runtimeHeaderStyle: React.CSSProperties = {
   fontSize: 10,
   color: colors.amber,
   letterSpacing: type.labelTracking,
-  textTransform: 'uppercase',
+  textTransform: 'uppercase'
 }
 
 const runtimeSelectStyle: React.CSSProperties = {
@@ -438,7 +436,7 @@ const runtimeSelectStyle: React.CSSProperties = {
   color: colors.textPrimary,
   fontFamily: type.mono,
   fontSize: 11,
-  padding: '4px 6px',
+  padding: '4px 6px'
 }
 
 const modelInputStyle: React.CSSProperties = {
@@ -447,7 +445,7 @@ const modelInputStyle: React.CSSProperties = {
   color: colors.textPrimary,
   fontFamily: type.mono,
   fontSize: 11,
-  padding: '4px 6px',
+  padding: '4px 6px'
 }
 
 const applyButtonStyle: React.CSSProperties = {
@@ -459,22 +457,22 @@ const applyButtonStyle: React.CSSProperties = {
   letterSpacing: '0.05em',
   textTransform: 'uppercase',
   padding: '6px 10px',
-  cursor: 'pointer',
+  cursor: 'pointer'
 }
 
 const applyButtonPendingStyle: React.CSSProperties = {
   opacity: 0.5,
-  cursor: 'not-allowed',
+  cursor: 'not-allowed'
 }
 
 const runtimeErrorStyle: React.CSSProperties = {
   color: colors.statusFailed,
-  fontSize: 10,
+  fontSize: 10
 }
 
 const runtimeHintStyle: React.CSSProperties = {
   color: colors.textMuted,
   fontSize: 10,
   lineHeight: 1.4,
-  fontStyle: 'italic',
+  fontStyle: 'italic'
 }

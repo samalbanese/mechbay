@@ -39,7 +39,7 @@ interface FacilitySeed {
   tile: { x: number; y: number }
 }
 
-const DEFAULT_FACILITY_MAP: FacilitySeed[] = [
+export const DEFAULT_FACILITY_MAP: FacilitySeed[] = [
   { facilityType: 'security-bay', name: 'Security Bay', tile: { x: 3, y: 3 } },
   { facilityType: 'research-lab', name: 'Research Lab', tile: { x: 8, y: 3 } },
   { facilityType: 'foundry', name: 'Foundry', tile: { x: 13, y: 3 } },
@@ -47,6 +47,18 @@ const DEFAULT_FACILITY_MAP: FacilitySeed[] = [
   { facilityType: 'command-center', name: 'Command Center', tile: { x: 8, y: 6 } },
   { facilityType: 'data-archive', name: 'Data Archive', tile: { x: 13, y: 13 } }
 ]
+
+export function seedFacilities(): Facility[] {
+  return DEFAULT_FACILITY_MAP.map((facility) => ({
+    id: ulid(),
+    facilityType: facility.facilityType,
+    name: facility.name,
+    tile: facility.tile,
+    path: '',
+    source: 'manual',
+    discoveredAt: Date.now()
+  }))
+}
 
 function defaultState(userDataDir: string): AppState {
   return {
@@ -68,21 +80,8 @@ function defaultState(userDataDir: string): AppState {
       }
       return companion
     }),
-    facilities: DEFAULT_FACILITY_MAP.map((f) => {
-      // Seed facilities have no associated project path yet — they become
-      // usable targets once the Project Scanner (Wave 6) binds them to a
-      // real directory, or when the user manually configures one.
-      const facility: Facility = {
-        id: ulid(),
-        facilityType: f.facilityType,
-        name: f.name,
-        tile: f.tile,
-        path: '',
-        source: 'manual',
-        discoveredAt: Date.now()
-      }
-      return facility
-    }),
+    // Seed facilities are unlinked until the user binds a project directory.
+    facilities: seedFacilities(),
     deployments: [],
     logChunks: [],
     settings: {

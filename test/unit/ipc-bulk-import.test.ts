@@ -48,7 +48,8 @@ describe('IPC.BULK_IMPORT_RUN facility placement', () => {
       win: makeFakeWin(),
       state,
       runners: {} as never,
-      fsReader: { readDir: vi.fn(), readFile: vi.fn(), updateWhitelist: vi.fn() } as never
+      fsReader: { readDir: vi.fn(), readFile: vi.fn(), updateWhitelist: vi.fn() } as never,
+      secrets: {} as never
     })
     const handler = registeredHandlers.get(IPC.BULK_IMPORT_RUN)
     if (!handler) throw new Error('BULK_IMPORT_RUN handler was not registered')

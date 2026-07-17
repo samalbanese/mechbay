@@ -125,9 +125,7 @@ describe('GeminiRunner model pass-through', () => {
     })
 
     await runner.spawn('/tmp', 'summarize', { model: 'gemini-3-pro' })
-    expect(spawnCalls).toEqual([
-      ['gemini', ['-o', 'text', '-y', '-m', 'gemini-3-pro']]
-    ])
+    expect(spawnCalls).toEqual([['gemini', ['-o', 'text', '-y', '-m', 'gemini-3-pro']]])
     expect(child.stdin.write).toHaveBeenCalledWith('summarize')
     expect(child.stdin.end).toHaveBeenCalled()
   })
@@ -166,9 +164,7 @@ describe('KimiRunner model pass-through', () => {
     })
 
     await runner.spawn('/tmp', 'explore', { model: 'kimi-k3' })
-    expect(spawnCalls).toEqual([
-      ['python', [SCRIPT, '-', '-v', '--narrate', '--model', 'kimi-k3']]
-    ])
+    expect(spawnCalls).toEqual([['python', [SCRIPT, '-', '-v', '--narrate', '--model', 'kimi-k3']]])
   })
 
   it('omits --model entirely when no override is set', async () => {
@@ -185,5 +181,43 @@ describe('KimiRunner model pass-through', () => {
 
     await runner.spawn('/tmp', 'explore')
     expect(spawnCalls).toEqual([['python', [SCRIPT, '-', '-v', '--narrate']]])
+  })
+})
+
+describe('CliRunner environment pass-through', () => {
+  it('merges explicit spawn env over process.env', async () => {
+    const child = makeFakeChild()
+    const spawnProcess = vi.fn(() => child)
+    const runner = new ClaudeRunner({
+      which: async () => '/fake/claude',
+      spawnProcess: spawnProcess as never
+    })
+    const previous = process.env.MECHBAY_RUNNER_ENV_TEST
+    process.env.MECHBAY_RUNNER_ENV_TEST = 'inherited'
+    try {
+      await runner.spawn('/tmp', 'say hi', {
+        env: { MECHBAY_RUNNER_ENV_TEST: 'stored', GEMINI_API_KEY: 'secret' }
+      })
+      expect(spawnProcess.mock.calls[0][2]).toMatchObject({
+        env: expect.objectContaining({
+          MECHBAY_RUNNER_ENV_TEST: 'stored',
+          GEMINI_API_KEY: 'secret'
+        })
+      })
+    } finally {
+      if (previous === undefined) delete process.env.MECHBAY_RUNNER_ENV_TEST
+      else process.env.MECHBAY_RUNNER_ENV_TEST = previous
+    }
+  })
+
+  it('does not pass an env option when no explicit env is supplied', async () => {
+    const child = makeFakeChild()
+    const spawnProcess = vi.fn(() => child)
+    const runner = new ClaudeRunner({
+      which: async () => '/fake/claude',
+      spawnProcess: spawnProcess as never
+    })
+    await runner.spawn('/tmp', 'say hi')
+    expect(spawnProcess.mock.calls[0][2]).toEqual({ cwd: '/tmp', shell: false })
   })
 })

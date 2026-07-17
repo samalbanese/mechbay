@@ -43,7 +43,7 @@ describe('IPC.DEPLOY_START unlinked facility guard', () => {
     registeredHandlers.clear()
   })
 
-  it("rejects an unlinked facility without creating or spawning a deployment", async () => {
+  it('rejects an unlinked facility without creating or spawning a deployment', async () => {
     const state = new StateManager(makeInMemoryStore(), '/tmp/ipc-deploy-unlinked-test')
     const companion = state.getState().companions[0]
     const facility = state.getState().facilities[0]
@@ -60,18 +60,22 @@ describe('IPC.DEPLOY_START unlinked facility guard', () => {
       win: makeFakeWin(),
       state,
       runners,
-      fsReader: { readDir: vi.fn(), readFile: vi.fn(), updateWhitelist: vi.fn() } as never
+      fsReader: { readDir: vi.fn(), readFile: vi.fn(), updateWhitelist: vi.fn() } as never,
+      secrets: {} as never
     })
     const handler = registeredHandlers.get(IPC.DEPLOY_START)
     if (!handler) throw new Error('DEPLOY_START handler was not registered')
 
     const deploymentsBefore = state.getState().deployments
     await expect(
-      handler({}, {
-        companionId: companion.id,
-        facilityId: facility.id,
-        taskPrompt: 'Inspect the project'
-      })
+      handler(
+        {},
+        {
+          companionId: companion.id,
+          facilityId: facility.id,
+          taskPrompt: 'Inspect the project'
+        }
+      )
     ).rejects.toThrow("isn't linked")
 
     expect(state.getState().deployments).toEqual(deploymentsBefore)

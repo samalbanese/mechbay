@@ -5,11 +5,16 @@ import { colors, type, animations } from '../theme'
 interface HudHeaderProps {
   state: AppState | null
   onBulkImportClick: () => void
+  onSettingsClick: () => void
 }
 
 const HUD_HEIGHT = 36
 
-export function HudHeader({ state, onBulkImportClick }: HudHeaderProps): React.JSX.Element {
+export function HudHeader({
+  state,
+  onBulkImportClick,
+  onSettingsClick
+}: HudHeaderProps): React.JSX.Element {
   const activeCount =
     state?.deployments.filter((d) =>
       ['walking-to', 'working', 'awaiting-input', 'returning'].includes(d.status)
@@ -41,7 +46,7 @@ export function HudHeader({ state, onBulkImportClick }: HudHeaderProps): React.J
               ...ledStyle,
               background: ledColor.color,
               boxShadow: ledColor.pulse ? `0 0 8px ${ledColor.color}` : 'none',
-              animation: ledColor.pulse ? 'ledPulse 2s ease-in-out infinite' : 'none',
+              animation: ledColor.pulse ? 'ledPulse 2s ease-in-out infinite' : 'none'
             }}
           />
           <span style={hudLabelStyle}>CMDR SAM · BAY 01</span>
@@ -76,6 +81,21 @@ export function HudHeader({ state, onBulkImportClick }: HudHeaderProps): React.J
           >
             ⟳ BULK IMPORT
           </button>
+          <button
+            type="button"
+            onClick={onSettingsClick}
+            style={bulkImportButtonStyle}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = colors.orangeHover
+              e.currentTarget.style.borderColor = colors.orangeHover
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent'
+              e.currentTarget.style.borderColor = colors.orange
+            }}
+          >
+            ⚙ SETTINGS
+          </button>
 
           <div style={activeCounterStyle}>
             <span style={{ ...hudLabelStyle, color: activeCounterColor }}>
@@ -86,19 +106,20 @@ export function HudHeader({ state, onBulkImportClick }: HudHeaderProps): React.J
                 style={{
                   ...miniBarFillStyle,
                   width: `${Math.min((activeCount / concurrencyCap) * 100, 100)}%`,
-                  background: activeCounterColor,
+                  background: activeCounterColor
                 }}
               />
             </div>
-            {queueCount > 0 && (
-              <span style={queueBadgeStyle}>QUEUE: {queueCount}</span>
-            )}
+            {queueCount > 0 && <span style={queueBadgeStyle}>QUEUE: {queueCount}</span>}
           </div>
         </div>
       </div>
 
       {/* Global keyframes for LED pulse animation */}
-      <style>{animations.ledPulse}{animations.pulseWorking}</style>
+      <style>
+        {animations.ledPulse}
+        {animations.pulseWorking}
+      </style>
     </>
   )
 }
@@ -112,38 +133,38 @@ const hudBaseStyle: React.CSSProperties = {
   alignItems: 'center',
   fontSize: 11,
   height: HUD_HEIGHT,
-  flexShrink: 0,
+  flexShrink: 0
 }
 
 const hudTopStyle: React.CSSProperties = {
   ...hudBaseStyle,
   borderWidth: '0 0 2px 0',
   justifyContent: 'space-between',
-  gap: 16,
+  gap: 16
 }
 
 const hudGroupStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
-  gap: 12,
+  gap: 12
 }
 
 const hudDividerStyle: React.CSSProperties = {
   width: 1,
   height: 20,
-  background: colors.borderHud,
+  background: colors.borderHud
 }
 
 const hudLabelStyle: React.CSSProperties = {
   letterSpacing: type.hudTracking,
   textTransform: 'uppercase',
   color: colors.textSecondary,
-  fontSize: 11,
+  fontSize: 11
 }
 
 const hudValueStyle: React.CSSProperties = {
   color: colors.textPrimary,
-  fontWeight: 'bold',
+  fontWeight: 'bold'
 }
 
 const ledStyle: React.CSSProperties = {
@@ -152,7 +173,7 @@ const ledStyle: React.CSSProperties = {
   height: 8,
   borderRadius: '50%',
   marginRight: 8,
-  flexShrink: 0,
+  flexShrink: 0
 }
 
 const bulkImportButtonStyle: React.CSSProperties = {
@@ -166,13 +187,13 @@ const bulkImportButtonStyle: React.CSSProperties = {
   cursor: 'pointer',
   fontFamily: 'inherit',
   textTransform: 'uppercase',
-  transition: 'all 0.15s ease',
+  transition: 'all 0.15s ease'
 }
 
 const activeCounterStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
-  gap: 8,
+  gap: 8
 }
 
 const miniBarContainerStyle: React.CSSProperties = {
@@ -180,16 +201,16 @@ const miniBarContainerStyle: React.CSSProperties = {
   height: 4,
   background: colors.border,
   borderRadius: 2,
-  overflow: 'hidden',
+  overflow: 'hidden'
 }
 
 const miniBarFillStyle: React.CSSProperties = {
   height: '100%',
-  transition: 'width 0.3s ease, background 0.3s ease',
+  transition: 'width 0.3s ease, background 0.3s ease'
 }
 
 const queueBadgeStyle: React.CSSProperties = {
   color: colors.amber,
   fontSize: 10,
-  letterSpacing: type.hudTracking,
+  letterSpacing: type.hudTracking
 }

@@ -19,7 +19,8 @@ import type {
   CompanionConfigurePayload,
   CompanionConfigureResult
 } from '../shared/types'
-import type { StateManager } from './state-manager'
+import { seedFacilities, type StateManager } from './state-manager'
+import type { SecretsManager } from './secrets'
 import type { Runner } from './runners/types'
 import { ulid } from '../shared/ulid'
 import { scanProjects, type DiscoveredProject } from './project-scanner'
@@ -43,14 +44,16 @@ export interface IpcDeps {
   state: StateManager
   runners: Record<AgentFamily, Runner>
   fsReader: FsReader
+  secrets: SecretsManager
 }
 
 const FS_DIR_IGNORE = ['node_modules', '.git', 'dist', 'build', '.next', '.turbo', 'out']
 
 const ACTIVE_STATUSES: DeploymentStatus[] = ['walking-to', 'working', 'awaiting-input', 'returning']
+const BLOCKING_STATUSES: DeploymentStatus[] = [...ACTIVE_STATUSES, 'queued']
 
 export function registerIpc(opts: IpcDeps): void {
-  const { win, state, runners, fsReader } = opts
+  const { win, state, runners, fsReader, secrets } = opts
 
   // Filesystem: whitelist-guarded read-only access for the File Browser.
   // Handlers simply delegate to FsReader; all security lives there.
@@ -133,6 +136,47 @@ export function registerIpc(opts: IpcDeps): void {
       return linked
     }
   )
+
+  ipcMain.handle(IPC.FACILITY_REMOVE, (_e, args: { facilityId: string }) => {
+    const current = state.getState()
+    const facility = current.facilities.find((candidate) => candidate.id === args.facilityId)
+    if (!facility) return { ok: false, error: `Facility not found: ${args.facilityId}` }
+    const active = current.deployments.some(
+      (deployment) =>
+        deployment.facilityId === facility.id && BLOCKING_STATUSES.includes(deployment.status)
+    )
+    if (active) {
+      return {
+        ok: false,
+        error: `«${facility.name}» has an active deployment — wait for it to finish or abort it first.`
+      }
+    }
+    state.updateState((prev) => ({
+      ...prev,
+      facilities: prev.facilities.filter((candidate) => candidate.id !== facility.id)
+    }))
+    return { ok: true }
+  })
+
+  ipcMain.handle(IPC.FIELD_RESET, () => {
+    if (
+      state
+        .getState()
+        .deployments.some((deployment) => BLOCKING_STATUSES.includes(deployment.status))
+    ) {
+      return {
+        ok: false,
+        error: 'Deployments are active — wait or abort before resetting the field.'
+      }
+    }
+    state.updateState((prev) => ({ ...prev, facilities: seedFacilities() }))
+    return { ok: true }
+  })
+
+  ipcMain.handle(IPC.SECRETS_SET, (_e, args: { runtime: AgentFamily; value: string }) =>
+    secrets.setSecret(args.runtime, args.value)
+  )
+  ipcMain.handle(IPC.SECRETS_STATUS, () => secrets.getStatus())
 
   // Broadcast every state change to renderer.
   state.on('stateChanged', (s) => {
@@ -302,12 +346,26 @@ export function registerIpc(opts: IpcDeps): void {
     IPC.COMPANION_CONFIGURE,
     async (_e, payload: CompanionConfigurePayload): Promise<CompanionConfigureResult> => {
       const { companionId, runtime } = payload
-      const model = payload.model?.trim() || undefined
 
       const s = state.getState()
       const companion = s.companions.find((c) => c.id === companionId)
       if (!companion) {
         return { ok: false, error: `Companion not found: ${companionId}` }
+      }
+      const name = payload.name?.trim()
+      if (payload.name !== undefined && (!name || name.length > 24)) {
+        return { ok: false, error: 'Name must be 1-24 characters' }
+      }
+      if (runtime === undefined) {
+        if (name) {
+          state.updateState((prev) => ({
+            ...prev,
+            companions: prev.companions.map((candidate) =>
+              candidate.id === companionId ? { ...candidate, name } : candidate
+            )
+          }))
+        }
+        return { ok: true, cliAvailable: companion.cliAvailable }
       }
       if (!(runtime in runners)) {
         return { ok: false, error: `Unknown runtime: ${runtime}` }
@@ -324,7 +382,15 @@ export function registerIpc(opts: IpcDeps): void {
       state.updateState((prev) => ({
         ...prev,
         companions: prev.companions.map((c) =>
-          c.id === companionId ? { ...c, runtime, model, cliAvailable } : c
+          c.id === companionId
+            ? {
+                ...c,
+                runtime,
+                model: payload.model?.trim() || undefined,
+                cliAvailable,
+                ...(name ? { name } : {})
+              }
+            : c
         )
       }))
 
@@ -388,7 +454,10 @@ export async function executeDeployment(
       )
     }))
 
-    const result = await runner.spawn(facility.path, fullPrompt, { model: companion.model })
+    const result = await runner.spawn(facility.path, fullPrompt, {
+      model: companion.model,
+      env: opts.secrets.envFor(effectiveRuntime)
+    })
     const parser = new NarrationParser()
 
     const emit = (p: {

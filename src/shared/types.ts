@@ -165,14 +165,17 @@ export type BulkImportRunResult =
 /** Payload for COMPANION_CONFIGURE IPC call. */
 export interface CompanionConfigurePayload {
   companionId: string
-  runtime: AgentFamily
+  runtime?: AgentFamily
   model?: string
+  name?: string
 }
 
 /** Result for COMPANION_CONFIGURE IPC call. */
 export type CompanionConfigureResult =
   | { ok: true; cliAvailable: boolean }
   | { ok: false; error: string }
+
+export type SimpleActionResult = { ok: true } | { ok: false; error: string }
 
 export interface AppState {
   version: StateSchemaVersion

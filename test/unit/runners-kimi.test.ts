@@ -117,6 +117,18 @@ describe('KimiRunner (Fireworks wrapper)', () => {
     expect(await runner.isAvailable()).toBe(false)
   })
 
+  it('accepts a stored Kimi secret when Python is available', async () => {
+    const runner = new KimiRunner({
+      scriptPath: SCRIPT,
+      which: async () => '/usr/local/bin/python',
+      secrets: {
+        getStatus: () => ({ claude: false, codex: false, kimi: true, gemini: false, hermes: false })
+      }
+    })
+    expect(await runner.isAvailable()).toBe(true)
+    expect(kimiMocks.readFile).not.toHaveBeenCalled()
+  })
+
   it('invokes python with the script path, `-` (stdin sentinel), `-v`, and `--narrate`', async () => {
     const spawnCalls: Array<[string, string[]]> = []
     const child = makeFakeChild()
@@ -141,7 +153,8 @@ describe('KimiRunner (Fireworks wrapper)', () => {
       spawnProcess: (() => child) as never
     })
 
-    const bigPrompt = '# soul\nWide perspective first.\n\n# memory\n(empty)\n\n# task\nDo the thing.'
+    const bigPrompt =
+      '# soul\nWide perspective first.\n\n# memory\n(empty)\n\n# task\nDo the thing.'
     await runner.spawn('/tmp', bigPrompt)
 
     expect(child.stdin.write).toHaveBeenCalledWith(bigPrompt)

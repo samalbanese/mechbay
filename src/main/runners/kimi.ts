@@ -2,6 +2,7 @@ import { readFile } from 'fs/promises'
 import { homedir } from 'os'
 import { join } from 'path'
 import { CliRunner, type CliRunnerDeps } from './base'
+import type { SecretsManager } from '../secrets'
 
 export interface KimiRunnerDeps extends Partial<CliRunnerDeps> {
   /**
@@ -9,6 +10,7 @@ export interface KimiRunnerDeps extends Partial<CliRunnerDeps> {
    * Resolved at boot in src/main/index.ts via `app.getAppPath()`.
    */
   scriptPath: string
+  secrets?: Pick<SecretsManager, 'getStatus'>
 }
 
 /**
@@ -37,15 +39,21 @@ export interface KimiRunnerDeps extends Partial<CliRunnerDeps> {
 export class KimiRunner extends CliRunner {
   protected command = 'python'
   private scriptPath: string
+  private secrets?: Pick<SecretsManager, 'getStatus'>
 
   constructor(deps: KimiRunnerDeps) {
     super(deps)
     this.scriptPath = deps.scriptPath
+    this.secrets = deps.secrets
   }
 
   // A Python-only probe can mark Raven-Prime deployable when the wrapper will fail authentication.
   async isAvailable(): Promise<boolean> {
-    const [pythonPath, apiKey] = await Promise.all([this.which(this.command), this.getApiKey()])
+    const storedKey = this.secrets?.getStatus().kimi ?? false
+    const [pythonPath, apiKey] = await Promise.all([
+      this.which(this.command),
+      storedKey ? Promise.resolve('stored') : this.getApiKey()
+    ])
     return pythonPath !== null && apiKey !== null
   }
 

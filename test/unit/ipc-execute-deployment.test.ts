@@ -51,7 +51,11 @@ interface SpawnCall {
 function recordingRunner(calls: SpawnCall[]): Runner {
   return {
     isAvailable: async () => true,
-    spawn: async (cwd: string, prompt: string, options?: RunnerSpawnOptions): Promise<SpawnResult> => {
+    spawn: async (
+      cwd: string,
+      prompt: string,
+      options?: RunnerSpawnOptions
+    ): Promise<SpawnResult> => {
       calls.push({ cwd, prompt, options })
       return {
         stream: (async function* () {})(),
@@ -125,12 +129,16 @@ describe('executeDeployment runtime selection', () => {
       win: makeFakeWin(),
       state,
       runners,
-      fsReader: { readDir: vi.fn(), readFile: vi.fn(), updateWhitelist: vi.fn() } as never
+      fsReader: { readDir: vi.fn(), readFile: vi.fn(), updateWhitelist: vi.fn() } as never,
+      secrets: { envFor: vi.fn(() => ({ OPENAI_API_KEY: 'stored-key' })) } as never
     })
 
     expect(claudeCalls).toHaveLength(0)
     expect(codexCalls).toHaveLength(1)
     expect(codexCalls[0].cwd).toBe(facilityDir)
-    expect(codexCalls[0].options).toEqual({ model: 'gpt-5.6-terra' })
+    expect(codexCalls[0].options).toEqual({
+      model: 'gpt-5.6-terra',
+      env: { OPENAI_API_KEY: 'stored-key' }
+    })
   })
 })

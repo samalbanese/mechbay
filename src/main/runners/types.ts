@@ -25,6 +25,8 @@ export interface SpawnResult {
 export interface RunnerSpawnOptions {
   /** Model override passed to the runtime CLI, if it supports one. */
   model?: string
+  /** Environment variables injected into this process only. */
+  env?: Record<string, string>
 }
 
 export interface Runner {

@@ -13,6 +13,7 @@ import { LogPane } from './components/LogPane'
 import { CompanionPanel } from './components/CompanionPanel'
 import { HudHeader } from './components/HudHeader'
 import { HudFooter } from './components/HudFooter'
+import { SettingsModal } from './components/SettingsModal'
 import { colors, type } from './theme'
 
 type SidebarTab = 'log' | 'files' | 'journal'
@@ -29,6 +30,7 @@ function App(): React.JSX.Element {
   const [activeTab, setActiveTab] = useState<SidebarTab>('log')
   const [error, setError] = useState<string | null>(null)
   const [bulkImportOpen, setBulkImportOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [debriefQueue, setDebriefQueue] = useState<string[]>([])
 
   const canvasParentRef = useRef<HTMLDivElement>(null)
@@ -145,15 +147,46 @@ function App(): React.JSX.Element {
           alert(`Could not place building: ${e instanceof Error ? e.message : String(e)}`)
         )
     }
+    const offFacilityRightClick = (payload: { facilityId: string }): void => {
+      const facility = latestStateRef.current?.facilities.find(
+        (candidate) => candidate.id === payload.facilityId
+      )
+      if (
+        !facility ||
+        !confirm(
+          `Decommission «${facility.name}»? The building is removed from the bay; the project directory on disk is untouched.`
+        )
+      ) {
+        return
+      }
+      window.mechbay
+        .facilityRemove(facility.id)
+        .then((result) => {
+          if (!result.ok) {
+            alert(result.error)
+            return
+          }
+          setBrowsingFacilityId((current) => {
+            if (current !== facility.id) return current
+            setActiveTab('log')
+            return null
+          })
+        })
+        .catch((e) =>
+          alert(`Could not decommission building: ${e instanceof Error ? e.message : String(e)}`)
+        )
+    }
     bus.on('dropOnFacility', offDrop)
     bus.on('companionSelected', offSelect)
     bus.on('facilityClicked', offFacility)
+    bus.on('facilityRightClicked', offFacilityRightClick)
     bus.on('emptyTileClicked', offEmptyTile)
 
     return () => {
       bus.off('dropOnFacility', offDrop)
       bus.off('companionSelected', offSelect)
       bus.off('facilityClicked', offFacility)
+      bus.off('facilityRightClicked', offFacilityRightClick)
       bus.off('emptyTileClicked', offEmptyTile)
       gameRef.current?.destroy(true)
       gameRef.current = null
@@ -186,7 +219,10 @@ function App(): React.JSX.Element {
     (facility) => facility.id === debriefDeployment?.facilityId
   )
   const otherModalOpen = Boolean(
-    pendingDeploy || bulkImportOpen || (recoveryZombies && recoveryZombies.length > 0)
+    pendingDeploy ||
+    bulkImportOpen ||
+    settingsOpen ||
+    (recoveryZombies && recoveryZombies.length > 0)
   )
 
   // Build deployment info for log pane separators using Map for O(1) companion lookup
@@ -202,7 +238,11 @@ function App(): React.JSX.Element {
 
   return (
     <div style={shellStyle}>
-      <HudHeader state={state} onBulkImportClick={() => setBulkImportOpen(true)} />
+      <HudHeader
+        state={state}
+        onBulkImportClick={() => setBulkImportOpen(true)}
+        onSettingsClick={() => setSettingsOpen(true)}
+      />
 
       <div style={mainStyle}>
         <div ref={canvasParentRef} style={canvasParentStyle} />
@@ -289,6 +329,10 @@ function App(): React.JSX.Element {
       )}
 
       {bulkImportOpen && <BulkImportModal onClose={() => setBulkImportOpen(false)} />}
+
+      {settingsOpen && state && (
+        <SettingsModal companions={state.companions} onClose={() => setSettingsOpen(false)} />
+      )}
 
       {!otherModalOpen && debriefDeployment && debriefCompanion && debriefFacility && (
         <DebriefModal

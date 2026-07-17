@@ -102,6 +102,7 @@ export class BayScene extends Phaser.Scene {
   private state: AppState | null = null
   private mechSprites = new Map<string, Phaser.GameObjects.Image>()
   private facilitySprites = new Map<string, Phaser.GameObjects.Image>()
+  private facilityLabels = new Map<string, Phaser.GameObjects.Text>()
   private smokeEmitters = new Map<string, Phaser.GameObjects.Particles.ParticleEmitter>()
   private unavailableLabels = new Map<string, Phaser.GameObjects.Text>()
   private completionBubbles = new Set<Phaser.GameObjects.Container>()
@@ -177,6 +178,7 @@ export class BayScene extends Phaser.Scene {
     // change would need a scene restart to take effect, which is fine here.
     this.reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     this.cameras.main.setBackgroundColor('#0a0805')
+    this.input.mouse?.disableContextMenu()
     // Center camera on the geometric middle of the 16×16 iso diamond.
     // Center tile is (GRID_W/2, GRID_H/2) which iso-maps to (0, GRID_H*TILE_H/2).
     const center = isoToScreen({ x: GRID_W / 2, y: GRID_H / 2 })
@@ -195,6 +197,7 @@ export class BayScene extends Phaser.Scene {
     this.input.on(
       'pointerup',
       (pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]) => {
+        if (pointer.button === 2) return
         if (currentlyOver.length > 0) return
         const dragDist = Math.hypot(pointer.upX - pointer.downX, pointer.upY - pointer.downY)
         if (dragDist > CLICK_DRAG_THRESHOLD) return
@@ -366,12 +369,18 @@ export class BayScene extends Phaser.Scene {
       sprite.setDisplaySize(FACILITY_DISPLAY_W, FACILITY_DISPLAY_H)
       sprite.setDepth(50 + s.y)
       sprite.setInteractive()
-      sprite.on('pointerup', () => bus.emit('facilityClicked', { facilityId: facility.id }))
+      sprite.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+        if (pointer.rightButtonReleased() || pointer.button === 2) {
+          bus.emit('facilityRightClicked', { facilityId: facility.id })
+          return
+        }
+        bus.emit('facilityClicked', { facilityId: facility.id })
+      })
       this.facilitySprites.set(facility.id, sprite)
       this.createFacilityBeacon(facility.id, s, this.state.facilities.indexOf(facility))
 
       // Facility label below the sprite
-      this.add
+      const label = this.add
         .text(s.x, s.y + FACILITY_DISPLAY_H * 0.3, facility.name.toUpperCase(), {
           fontSize: '12px',
           color: '#e85f00',
@@ -382,6 +391,7 @@ export class BayScene extends Phaser.Scene {
         })
         .setOrigin(0.5)
         .setDepth(500)
+      this.facilityLabels.set(facility.id, label)
     }
 
     // Remove sprites for entities no longer in state (e.g., decommissioned facility)
@@ -406,6 +416,8 @@ export class BayScene extends Phaser.Scene {
       if (!this.state.facilities.some((f) => f.id === id)) {
         sprite.destroy()
         this.facilitySprites.delete(id)
+        this.facilityLabels.get(id)?.destroy()
+        this.facilityLabels.delete(id)
         this.killTween(this.facilityBeaconTweens, id)
         this.facilityBeacons.get(id)?.destroy()
         this.facilityBeacons.delete(id)
@@ -980,6 +992,8 @@ export class BayScene extends Phaser.Scene {
     this.facilityBeaconTweens.clear()
     for (const beacon of this.facilityBeacons.values()) beacon.destroy()
     this.facilityBeacons.clear()
+    for (const label of this.facilityLabels.values()) label.destroy()
+    this.facilityLabels.clear()
     this.destroySelectionRing()
     this.selectedCompanionId = null
   }
