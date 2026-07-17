@@ -19,7 +19,16 @@ export function computeDeploymentActions(
 
   for (const deployment of nextDeployments) {
     const prevStatus = previousStatuses.get(deployment.id)
-    if (deployment.status === 'walking-to' && prevStatus !== 'walking-to') {
+    // The walk fires when a deployment enters walking-to — but ALSO when it
+    // first appears already 'working'. The main process flips walking-to →
+    // working within the same tick, so React's batching can coalesce both
+    // broadcasts into one snapshot and the walking-to state is never
+    // observed. Emitted before start-working so the scene's active-walk
+    // tracking defers the work sway until the mech actually arrives.
+    const entersWalkingTo = deployment.status === 'walking-to' && prevStatus !== 'walking-to'
+    const missedWalkingTo =
+      deployment.status === 'working' && (prevStatus === undefined || prevStatus === 'queued')
+    if (entersWalkingTo || missedWalkingTo) {
       actions.push({
         kind: 'walk-to-facility',
         companionId: deployment.companionId,

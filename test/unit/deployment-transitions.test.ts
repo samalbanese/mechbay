@@ -73,4 +73,40 @@ describe('computeDeploymentActions', () => {
       }
     ])
   })
+
+  // The walking-to status lives for well under a millisecond in the main
+  // process, so React's state batching can (and in the drag→modal flow,
+  // reliably does) coalesce the walking-to and working broadcasts into one
+  // snapshot — the renderer's first sighting of the deployment is already
+  // 'working'. The walk must fire anyway, BEFORE start-working, so the
+  // scene's active-walk tracking can defer the work sway until arrival.
+  it('still walks when the first observed snapshot is already working (coalesced broadcasts)', () => {
+    expect(computeDeploymentActions([], [deployment('working')])).toEqual([
+      {
+        kind: 'walk-to-facility',
+        companionId: 'companion-1',
+        facilityId: 'facility-1',
+        deploymentId: 'deployment-1'
+      },
+      { kind: 'start-working', companionId: 'companion-1', facilityId: 'facility-1' }
+    ])
+  })
+
+  it('still walks when queued jumps straight to working (walking-to snapshot missed)', () => {
+    expect(computeDeploymentActions([deployment('queued')], [deployment('working')])).toEqual([
+      {
+        kind: 'walk-to-facility',
+        companionId: 'companion-1',
+        facilityId: 'facility-1',
+        deploymentId: 'deployment-1'
+      },
+      { kind: 'start-working', companionId: 'companion-1', facilityId: 'facility-1' }
+    ])
+  })
+
+  it('does not re-walk when walking-to advances to working (walk already fired)', () => {
+    expect(computeDeploymentActions([deployment('walking-to')], [deployment('working')])).toEqual([
+      { kind: 'start-working', companionId: 'companion-1', facilityId: 'facility-1' }
+    ])
+  })
 })
