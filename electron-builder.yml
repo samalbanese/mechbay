@@ -48,7 +48,7 @@ linux:
   desktop:
     entry:
       Name: MechBay
-      Comment: Battletech for AI coding agents
+      Comment: A BattleTech-inspired command bay for AI coding agents
 appImage:
   artifactName: ${productName}-${version}.${ext}
 npmRebuild: false

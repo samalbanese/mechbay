@@ -1,6 +1,8 @@
 # MechBay
 
-_Battletech for AI coding agents._
+[![CI](https://github.com/samalbanese/mechbay/actions/workflows/ci.yml/badge.svg)](https://github.com/samalbanese/mechbay/actions/workflows/ci.yml)
+
+_A BattleTech-inspired command bay for AI coding agents._
 
 MechBay is an Electron desktop app for deploying real coding agents as mech-class companions. Drag a mech onto an isometric facility that represents a real project directory, give it a task, and follow the live output in the command-bay HUD.
 
@@ -31,6 +33,8 @@ _Demo gif coming soon._
 | Locust-Prime   | Swarm courier     | Bring your own agent  | `MECHBAY_HERMES_CMD` set to a CLI command line                     |
 
 An unconfigured mech shows `⚠ NOT DEPLOYABLE`. The rest of the bay remains usable.
+
+_Runtime integrations verified as of July 2026; MechBay degrades any unavailable runtime to NOT DEPLOYABLE rather than failing._
 
 ## Any mech, any runtime (bring your own key)
 
@@ -149,6 +153,8 @@ The decisions behind those waves, including tradeoffs and deferred ideas, live i
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+MechBay is a fan-inspired project and is not affiliated with, endorsed by, or connected to Topps, Catalyst Game Labs, or the BattleTech franchise. All mech and facility art is original, AI-generated work.
 
 ## Why
 

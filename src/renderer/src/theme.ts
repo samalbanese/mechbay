@@ -1,6 +1,6 @@
 /**
  * Centralized color + typography tokens for MechBay.
- * BattleTech for AI agents: dark terminal + orange/amber accents.
+ * BattleTech-inspired ops aesthetic: dark terminal + orange/amber accents.
  */
 
 export const colors = {
