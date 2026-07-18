@@ -28,3 +28,6 @@ coverage/
 
 # Local AI-agent session config
 .claude/
+
+# Generated audit/report HTML (kept local, uploaded manually)
+artifacts/
