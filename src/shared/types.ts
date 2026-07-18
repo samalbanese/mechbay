@@ -203,6 +203,8 @@ export interface AppState {
      * so pre-existing persisted state stays valid without a schema bump.
      */
     reduceMotion?: boolean
+    /** Static scanlines and edge vignette. Defaults on when unset. */
+    crtOverlay?: boolean
   }
   lastScanAt?: number
 }

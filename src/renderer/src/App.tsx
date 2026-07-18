@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from 'react'
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react'
 import Phaser from 'phaser'
 import type { AppState, Deployment } from '../../shared/types'
 import { BayScene } from './game/BayScene'
@@ -14,6 +14,8 @@ import { CompanionPanel } from './components/CompanionPanel'
 import { HudHeader } from './components/HudHeader'
 import { HudFooter } from './components/HudFooter'
 import { SettingsModal } from './components/SettingsModal'
+import { BootSplash } from './components/BootSplash'
+import { CrtOverlay } from './components/CrtOverlay'
 import { colors, type } from './theme'
 
 type SidebarTab = 'log' | 'files' | 'journal'
@@ -32,6 +34,8 @@ function App(): React.JSX.Element {
   const [bulkImportOpen, setBulkImportOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [debriefQueue, setDebriefQueue] = useState<string[]>([])
+  const [bootDone, setBootDone] = useState(false)
+  const handleBootDone = useCallback(() => setBootDone(true), [])
 
   const canvasParentRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<BayScene | null>(null)
@@ -240,6 +244,14 @@ function App(): React.JSX.Element {
       <div style={shellStyle}>
         <h1>⚙ MECHBAY · BOOT ERROR</h1>
         <pre style={{ color: '#c44' }}>{error}</pre>
+        {(state?.settings.crtOverlay ?? true) && <CrtOverlay />}
+        {!bootDone && (
+          <BootSplash
+            key={state?.settings.reduceMotion ? 'reduced' : 'full'}
+            reduceMotion={state?.settings.reduceMotion ?? false}
+            onComplete={handleBootDone}
+          />
+        )}
       </div>
     )
   }
@@ -370,6 +382,7 @@ function App(): React.JSX.Element {
         <SettingsModal
           companions={state.companions}
           reduceMotion={state.settings.reduceMotion ?? false}
+          crtOverlay={state.settings.crtOverlay ?? true}
           onClose={() => setSettingsOpen(false)}
         />
       )}
@@ -414,6 +427,14 @@ function App(): React.JSX.Element {
             />
           )
         })()}
+      {(state?.settings.crtOverlay ?? true) && <CrtOverlay />}
+      {!bootDone && (
+        <BootSplash
+          key={state?.settings.reduceMotion ? 'reduced' : 'full'}
+          reduceMotion={state?.settings.reduceMotion ?? false}
+          onComplete={handleBootDone}
+        />
+      )}
     </div>
   )
 }

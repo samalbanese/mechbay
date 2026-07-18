@@ -6,6 +6,7 @@ import { colors, type } from '../theme'
 interface SettingsModalProps {
   companions: Companion[]
   reduceMotion: boolean
+  crtOverlay: boolean
   onClose: () => void
 }
 
@@ -22,10 +23,12 @@ const EMPTY_STATUS: SecretStatus = {
 export function SettingsModal({
   companions,
   reduceMotion,
+  crtOverlay,
   onClose
 }: SettingsModalProps): React.JSX.Element {
   const [secretStatus, setSecretStatus] = useState<SecretStatus>(EMPTY_STATUS)
   const [motionReduced, setMotionReduced] = useState(reduceMotion)
+  const [crtEnabled, setCrtEnabled] = useState(crtOverlay)
   const closeRef = useRef<HTMLButtonElement>(null)
 
   // Keep the toggle in sync if the persisted value changes underneath us.
@@ -37,6 +40,16 @@ export function SettingsModal({
     const result = await window.mechbay.updateSettings({ reduceMotion: next })
     if (!result.ok) {
       setMotionReduced(!next)
+      alert(result.error)
+    }
+  }
+
+  const toggleCrt = async (): Promise<void> => {
+    const next = !crtEnabled
+    setCrtEnabled(next)
+    const result = await window.mechbay.updateSettings({ crtOverlay: next })
+    if (!result.ok) {
+      setCrtEnabled(!next)
       alert(result.error)
     }
   }
@@ -129,6 +142,26 @@ export function SettingsModal({
             onClick={() => void toggleMotion()}
           >
             {motionReduced ? 'MOTION: REDUCED' : 'MOTION: FULL'}
+          </button>
+        </section>
+
+        <section style={bayStyle}>
+          <div>
+            <div style={sectionLabelStyle}>CRT OVERLAY</div>
+            <div style={bayHintStyle}>
+              {crtEnabled
+                ? 'On — subtle scanlines and edge shading sit over the command glass.'
+                : 'Off — the display renders without analog screen texture.'}
+            </div>
+          </div>
+          <button
+            type="button"
+            style={toggleButtonStyle(!crtEnabled)}
+            role="switch"
+            aria-checked={crtEnabled}
+            onClick={() => void toggleCrt()}
+          >
+            {crtEnabled ? 'CRT: ON' : 'CRT: OFF'}
           </button>
         </section>
 
