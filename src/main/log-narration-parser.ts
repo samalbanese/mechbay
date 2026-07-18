@@ -19,7 +19,7 @@ export interface ParsedChunk {
   thoughtKind?: 'intent' | 'findings'
 }
 
-const MARKER_RE = /^\[(intent|findings)\]:?\s*/i
+const MARKER_RE = /^(?:\[(intent|findings)\]:?|▸\s*(intent):|◆\s*(findings):)\s*/i
 
 export class NarrationParser {
   private buffers: Record<SourceStream, string> = {
@@ -59,7 +59,7 @@ export class NarrationParser {
   private classify(stream: SourceStream, line: string): ParsedChunk {
     const match = line.match(MARKER_RE)
     if (!match) return { stream, text: line }
-    const kind = match[1].toLowerCase() as 'intent' | 'findings'
+    const kind = (match[1] ?? match[2] ?? match[3]).toLowerCase() as 'intent' | 'findings'
     return {
       stream: 'thought',
       text: line.slice(match[0].length),

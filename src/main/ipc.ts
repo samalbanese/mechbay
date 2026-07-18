@@ -3,6 +3,7 @@ import path from 'path'
 import { IPC } from '../shared/ipc-channels'
 import type {
   AgentFamily,
+  AppMode,
   Companion,
   Deployment,
   DeploymentStatus,
@@ -45,6 +46,7 @@ export interface IpcDeps {
   runners: Record<AgentFamily, Runner>
   fsReader: FsReader
   secrets: SecretsManager
+  demoMode?: boolean
 }
 
 const FS_DIR_IGNORE = ['node_modules', '.git', 'dist', 'build', '.next', '.turbo', 'out']
@@ -54,6 +56,8 @@ const BLOCKING_STATUSES: DeploymentStatus[] = [...ACTIVE_STATUSES, 'queued']
 
 export function registerIpc(opts: IpcDeps): void {
   const { win, state, runners, fsReader, secrets } = opts
+
+  ipcMain.handle(IPC.APP_MODE_GET, (): AppMode => ({ demo: opts.demoMode ?? false }))
 
   // Filesystem: whitelist-guarded read-only access for the File Browser.
   // Handlers simply delegate to FsReader; all security lives there.

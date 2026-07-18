@@ -8,6 +8,10 @@
 
 export type AgentFamily = 'claude' | 'codex' | 'kimi' | 'gemini' | 'hermes'
 
+export interface AppMode {
+  demo: boolean
+}
+
 export type MechClass = 'atlas' | 'marauder' | 'raven' | 'catapult' | 'locust'
 
 export type FacilityType =

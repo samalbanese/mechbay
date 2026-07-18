@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { AppState } from '../../../shared/types'
 import { colors, type, animations } from '../theme'
 
@@ -15,6 +15,7 @@ export function HudHeader({
   onBulkImportClick,
   onSettingsClick
 }: HudHeaderProps): React.JSX.Element {
+  const [demoMode, setDemoMode] = useState(false)
   const activeCount =
     state?.deployments.filter((d) =>
       ['walking-to', 'working', 'awaiting-input', 'returning'].includes(d.status)
@@ -22,6 +23,21 @@ export function HudHeader({
   const queueCount = state?.deployments.filter((d) => d.status === 'queued').length ?? 0
   const failedCount = state?.deployments.filter((d) => d.status === 'failed').length ?? 0
   const concurrencyCap = state?.settings.concurrencyCap ?? 3
+
+  useEffect(() => {
+    let mounted = true
+    void window.mechbay
+      .getAppMode()
+      .then((mode) => {
+        if (mounted) setDemoMode(mode.demo)
+      })
+      .catch(() => {
+        // Mode discovery is presentational; a failed IPC call leaves the normal HUD intact.
+      })
+    return () => {
+      mounted = false
+    }
+  }, [])
 
   // Determine LED color based on fleet state
   const ledColor = useMemo((): { color: string; pulse: boolean } => {
@@ -50,6 +66,7 @@ export function HudHeader({
             }}
           />
           <span style={hudLabelStyle}>CMDR SAM · BAY 01</span>
+          {demoMode && <span style={simulationBadgeStyle}>◈ SIMULATION</span>}
         </div>
 
         <div style={hudDividerStyle} />
@@ -165,6 +182,18 @@ const hudLabelStyle: React.CSSProperties = {
 const hudValueStyle: React.CSSProperties = {
   color: colors.textPrimary,
   fontWeight: 'bold'
+}
+
+const simulationBadgeStyle: React.CSSProperties = {
+  color: colors.amber,
+  background: colors.amberTint,
+  border: `1px solid ${colors.amber}`,
+  boxShadow: `0 0 10px ${colors.amberGlow}`,
+  padding: '2px 7px',
+  fontSize: 9,
+  fontWeight: 'bold',
+  letterSpacing: type.hudTracking,
+  lineHeight: 1.2
 }
 
 const ledStyle: React.CSSProperties = {

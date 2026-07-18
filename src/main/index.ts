@@ -11,12 +11,14 @@ import { CodexRunner } from './runners/codex'
 import { KimiRunner } from './runners/kimi'
 import { GeminiRunner } from './runners/gemini'
 import { HermesRunner } from './runners/hermes'
+import { SimRunner } from './runners/sim'
 import { registerIpc } from './ipc'
 import { runCliAvailabilityCheck } from './cli-check'
 import { IPC } from '../shared/ipc-channels'
 import type { Runner } from './runners/types'
 import type { AgentFamily } from '../shared/types'
 import { SecretsManager } from './secrets'
+import { isDemoMode, linkDemoFacility, seedDemoWorkspace } from './demo-mode'
 
 function createWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
@@ -81,9 +83,16 @@ app.whenReady().then(() => {
   const win = createWindow()
 
   // ─── MechBay subsystems ───────────────────────────────────────
-  const store = new Store({ name: 'mechbay-state' })
+  const demoMode = isDemoMode()
+  const store = new Store({ name: demoMode ? 'mechbay-state-demo' : 'mechbay-state' })
   const state = new StateManager(store, app.getPath('userData'))
   const secrets = new SecretsManager(new Store({ name: 'mechbay-secrets' }))
+
+  if (demoMode) {
+    const demoDir = join(app.getPath('userData'), 'demo-facility')
+    seedDemoWorkspace(demoDir)
+    linkDemoFacility(state, demoDir)
+  }
 
   // Scaffold soul.md + memory.md for every companion on boot. Idempotent:
   // only writes templates if the files don't exist. A companion's
@@ -106,13 +115,21 @@ app.whenReady().then(() => {
   // just need `scripts/` to be shipped with the bundle.
   const kimiScriptPath = join(app.getAppPath(), 'scripts', 'kimi_fireworks.py')
 
-  const runners: Record<AgentFamily, Runner> = {
-    claude: new ClaudeRunner(),
-    codex: new CodexRunner(),
-    kimi: new KimiRunner({ scriptPath: kimiScriptPath, secrets }),
-    gemini: new GeminiRunner(),
-    hermes: new HermesRunner()
-  }
+  const runners: Record<AgentFamily, Runner> = demoMode
+    ? {
+        claude: new SimRunner('claude'),
+        codex: new SimRunner('codex'),
+        kimi: new SimRunner('kimi'),
+        gemini: new SimRunner('gemini'),
+        hermes: new SimRunner('hermes')
+      }
+    : {
+        claude: new ClaudeRunner(),
+        codex: new CodexRunner(),
+        kimi: new KimiRunner({ scriptPath: kimiScriptPath, secrets }),
+        gemini: new GeminiRunner(),
+        hermes: new HermesRunner()
+      }
 
   // Filesystem reader is whitelisted to (a) every facility's project path
   // and (b) each companion's barracks dir (so the File Browser can view
@@ -129,7 +146,7 @@ app.whenReady().then(() => {
   const fsReader = new FsReader(buildFsWhitelist())
   state.on('stateChanged', () => fsReader.updateWhitelist(buildFsWhitelist()))
 
-  registerIpc({ win, state, runners, fsReader, secrets })
+  registerIpc({ win, state, runners, fsReader, secrets, demoMode })
 
   // Crash recovery: any deployment stuck in an active status is a
   // zombie from a previous crash or force-quit. Mark them failed and

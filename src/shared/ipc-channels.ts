@@ -3,6 +3,7 @@
  * Grep-friendly across the entire codebase.
  */
 export const IPC = {
+  APP_MODE_GET: 'mechbay:app:modeGet',
   STATE_SUBSCRIBE: 'mechbay:state:subscribe',
   STATE_GET: 'mechbay:state:get',
   DEPLOY_START: 'mechbay:deploy:start',

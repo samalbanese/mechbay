@@ -61,21 +61,35 @@ describe('NarrationParser', () => {
 
   it('handles case-insensitive markers and an optional colon', () => {
     const p = new NarrationParser()
-    expect(
-      p.feed({ stream: 'stderr', text: '[intent]: lowercase with colon.\n' })
-    ).toEqual([
+    expect(p.feed({ stream: 'stderr', text: '[intent]: lowercase with colon.\n' })).toEqual([
       {
         stream: 'thought',
         text: 'lowercase with colon.\n',
         thoughtKind: 'intent'
       }
     ])
-    expect(
-      p.feed({ stream: 'stderr', text: '[Findings] mixed case.\n' })
-    ).toEqual([
+    expect(p.feed({ stream: 'stderr', text: '[Findings] mixed case.\n' })).toEqual([
       {
         stream: 'thought',
         text: 'mixed case.\n',
+        thoughtKind: 'findings'
+      }
+    ])
+  })
+
+  it('classifies Raven narration glyphs as thought streams', () => {
+    const p = new NarrationParser()
+    expect(p.feed({ stream: 'stdout', text: '▸ INTENT: Sweep the facility.\n' })).toEqual([
+      {
+        stream: 'thought',
+        text: 'Sweep the facility.\n',
+        thoughtKind: 'intent'
+      }
+    ])
+    expect(p.feed({ stream: 'stdout', text: '◆ FINDINGS: Telemetry is stable.\n' })).toEqual([
+      {
+        stream: 'thought',
+        text: 'Telemetry is stable.\n',
         thoughtKind: 'findings'
       }
     ])
@@ -87,9 +101,7 @@ describe('NarrationParser', () => {
       stream: 'stderr',
       text: '  -> read_file({"path": "x"})\n'
     })
-    expect(out).toEqual([
-      { stream: 'stderr', text: '  -> read_file({"path": "x"})\n' }
-    ])
+    expect(out).toEqual([{ stream: 'stderr', text: '  -> read_file({"path": "x"})\n' }])
   })
 
   it('splits a multi-line chunk into one record per line', () => {
@@ -113,12 +125,8 @@ describe('NarrationParser', () => {
 
   it('does not emit a partial trailing line; flush() emits it as-is (no marker classification)', () => {
     const p = new NarrationParser()
-    expect(p.feed({ stream: 'stderr', text: 'incomplete no newline' })).toEqual(
-      []
-    )
-    expect(p.flush()).toEqual([
-      { stream: 'stderr', text: 'incomplete no newline' }
-    ])
+    expect(p.feed({ stream: 'stderr', text: 'incomplete no newline' })).toEqual([])
+    expect(p.flush()).toEqual([{ stream: 'stderr', text: 'incomplete no newline' }])
   })
 
   it('buffers stdout and stderr independently (no cross-stream contamination)', () => {
@@ -144,8 +152,6 @@ describe('NarrationParser', () => {
       stream: 'stderr',
       text: '[INTENT] on windows\r\n'
     })
-    expect(out).toEqual([
-      { stream: 'thought', text: 'on windows\n', thoughtKind: 'intent' }
-    ])
+    expect(out).toEqual([{ stream: 'thought', text: 'on windows\n', thoughtKind: 'intent' }])
   })
 })
