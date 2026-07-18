@@ -1,0 +1,10 @@
+// Cloudflare Workers static-asset config for the landing page.
+// The connected CI deploy runs `npx wrangler deploy`, which publishes
+// the pre-built site/ folder as-is — no build step required.
+{
+  "name": "mechbay",
+  "compatibility_date": "2026-07-18",
+  "assets": {
+    "directory": "./site"
+  }
+}
