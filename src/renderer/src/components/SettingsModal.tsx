@@ -5,6 +5,7 @@ import { colors, type } from '../theme'
 
 interface SettingsModalProps {
   companions: Companion[]
+  reduceMotion: boolean
   onClose: () => void
 }
 
@@ -18,9 +19,27 @@ const EMPTY_STATUS: SecretStatus = {
   hermes: false
 }
 
-export function SettingsModal({ companions, onClose }: SettingsModalProps): React.JSX.Element {
+export function SettingsModal({
+  companions,
+  reduceMotion,
+  onClose
+}: SettingsModalProps): React.JSX.Element {
   const [secretStatus, setSecretStatus] = useState<SecretStatus>(EMPTY_STATUS)
+  const [motionReduced, setMotionReduced] = useState(reduceMotion)
   const closeRef = useRef<HTMLButtonElement>(null)
+
+  // Keep the toggle in sync if the persisted value changes underneath us.
+  useEffect(() => setMotionReduced(reduceMotion), [reduceMotion])
+
+  const toggleMotion = async (): Promise<void> => {
+    const next = !motionReduced
+    setMotionReduced(next) // optimistic; main broadcasts the authoritative value
+    const result = await window.mechbay.updateSettings({ reduceMotion: next })
+    if (!result.ok) {
+      setMotionReduced(!next)
+      alert(result.error)
+    }
+  }
 
   const refreshStatus = async (): Promise<void> => {
     setSecretStatus(await window.mechbay.secretsStatus())
@@ -92,6 +111,26 @@ export function SettingsModal({ companions, onClose }: SettingsModalProps): Reac
             />
           ))}
         </div>
+
+        <section style={bayStyle}>
+          <div>
+            <div style={sectionLabelStyle}>MOTION</div>
+            <div style={bayHintStyle}>
+              {motionReduced
+                ? 'Reduced — the bay holds still: no idle sway, walk bob, or beacon blinks.'
+                : 'Full — mechs breathe, march with a walk cycle, and beacons pulse.'}
+            </div>
+          </div>
+          <button
+            type="button"
+            style={toggleButtonStyle(motionReduced)}
+            role="switch"
+            aria-checked={!motionReduced}
+            onClick={() => void toggleMotion()}
+          >
+            {motionReduced ? 'MOTION: REDUCED' : 'MOTION: FULL'}
+          </button>
+        </section>
 
         <section style={bayStyle}>
           <div>
@@ -421,6 +460,18 @@ const sectionLabelStyle: React.CSSProperties = {
   letterSpacing: type.labelTracking
 }
 const bayHintStyle: React.CSSProperties = { color: colors.textSecondary, fontSize: 9, marginTop: 5 }
+const toggleButtonStyle = (reduced: boolean): React.CSSProperties => ({
+  background: reduced ? 'transparent' : colors.amberTint,
+  border: `1px solid ${reduced ? colors.textMuted : colors.amber}`,
+  color: reduced ? colors.textSecondary : colors.amber,
+  fontFamily: type.mono,
+  fontSize: 10,
+  fontWeight: 800,
+  letterSpacing: type.hudTracking,
+  padding: '8px 14px',
+  cursor: 'pointer',
+  whiteSpace: 'nowrap'
+})
 const dangerButtonStyle: React.CSSProperties = {
   background: 'rgba(255,82,82,.07)',
   border: `1px solid ${colors.statusFailed}`,

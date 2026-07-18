@@ -367,7 +367,11 @@ function App(): React.JSX.Element {
       {bulkImportOpen && <BulkImportModal onClose={() => setBulkImportOpen(false)} />}
 
       {settingsOpen && state && (
-        <SettingsModal companions={state.companions} onClose={() => setSettingsOpen(false)} />
+        <SettingsModal
+          companions={state.companions}
+          reduceMotion={state.settings.reduceMotion ?? false}
+          onClose={() => setSettingsOpen(false)}
+        />
       )}
 
       {!otherModalOpen && debriefDeployment && debriefCompanion && debriefFacility && (

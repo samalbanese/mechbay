@@ -24,7 +24,8 @@ export const IPC = {
   BULK_IMPORT_RUN: 'mechbay:bulk-import:run',
   COMPANION_CONFIGURE: 'mechbay:companion:configure',
   SECRETS_SET: 'mechbay:secrets:set',
-  SECRETS_STATUS: 'mechbay:secrets:status'
+  SECRETS_STATUS: 'mechbay:secrets:status',
+  SETTINGS_UPDATE: 'mechbay:settings:update'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]

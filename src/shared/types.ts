@@ -188,6 +188,17 @@ export interface AppState {
     concurrencyCap: number
     ignoredMarkers: string[]
     companionNameOverrides: Record<string, string>
+    /**
+     * When true, the bay suppresses decorative motion (idle breathing,
+     * beacon blinks, walk bob, dust) — the accessibility escape hatch.
+     * MechBay deliberately does NOT auto-derive this from the OS
+     * `prefers-reduced-motion` setting: the animated bay is the whole
+     * point, so the OS reporting "reduce" (common on Windows with
+     * animation effects off) shouldn't silently kill it. Defaults to
+     * false / full motion; the user opts in via MECH SETTINGS. Optional
+     * so pre-existing persisted state stays valid without a schema bump.
+     */
+    reduceMotion?: boolean
   }
   lastScanAt?: number
 }

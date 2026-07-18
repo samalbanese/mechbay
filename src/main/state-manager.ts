@@ -95,7 +95,8 @@ function defaultState(userDataDir: string): AppState {
         '__pycache__',
         'Archived Projects DO NOT SCAN'
       ],
-      companionNameOverrides: {}
+      companionNameOverrides: {},
+      reduceMotion: false
     }
   }
 }

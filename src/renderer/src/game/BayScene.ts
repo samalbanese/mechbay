@@ -158,8 +158,61 @@ export class BayScene extends Phaser.Scene {
   setState(state: AppState): void {
     const prev = this.state
     this.state = state
-    if (this.scene.isActive()) this.render()
+    const nextReduceMotion = this.resolveReduceMotion()
+    if (this.scene.isActive()) {
+      // Apply a live toggle to existing entities before render() runs — new
+      // sprites created below already read the up-to-date flag themselves.
+      if (nextReduceMotion !== this.reducedMotion) this.setReducedMotion(nextReduceMotion)
+      this.render()
+    } else {
+      // Scene not yet active: create() will read the flag and do the first draw.
+      this.reducedMotion = nextReduceMotion
+    }
     if (prev) this.reactToDeploymentTransitions(prev, state)
+  }
+
+  /** The user's in-app motion preference (defaults to full motion). */
+  private resolveReduceMotion(): boolean {
+    return this.state?.settings.reduceMotion ?? false
+  }
+
+  /**
+   * Apply a live change to the reduce-motion preference without reloading the
+   * scene. Newly created sprites always read `this.reducedMotion` at creation,
+   * so this only has to reconcile the always-on decorative loops for entities
+   * that already exist: idle breathing, facility beacons, and the selection
+   * ring. Per-deploy effects (walk bob/frames, working sway, foot dust) read
+   * the flag when they're triggered, so they self-correct on the next deploy.
+   */
+  private setReducedMotion(next: boolean): void {
+    this.reducedMotion = next
+    if (next) {
+      // Motion off: tear down decorative loops and snap transforms to rest.
+      for (const id of [...this.idleBreathTweens.keys()]) this.killTween(this.idleBreathTweens, id)
+      for (const sprite of this.mechSprites.values()) {
+        sprite.angle = 0
+        sprite.scaleY = this.baseScaleY(sprite)
+      }
+      for (const id of [...this.footDustEmitters.keys()]) this.stopFootDust(id)
+      for (const id of [...this.facilityBeaconTweens.keys()]) {
+        this.killTween(this.facilityBeaconTweens, id)
+      }
+      for (const beacon of this.facilityBeacons.values()) beacon.destroy()
+      this.facilityBeacons.clear()
+    } else {
+      // Motion on: (re)start decorative loops for entities already on screen.
+      for (const id of this.mechSprites.keys()) this.startIdleBreath(id)
+      this.state?.facilities.forEach((facility, index) => {
+        if (this.facilitySprites.has(facility.id) && !this.facilityBeacons.has(facility.id)) {
+          this.createFacilityBeacon(facility.id, isoToScreen(facility.tile), index)
+        }
+      })
+    }
+    // Redraw the selection ring so its pulse (or lack of one) matches the mode.
+    if (this.selectedCompanionId) {
+      this.destroySelectionRing()
+      this.createSelectionRing(this.selectedCompanionId)
+    }
   }
 
   preload(): void {
@@ -194,9 +247,11 @@ export class BayScene extends Phaser.Scene {
 
   create(): void {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this)
-    // Checked once at scene creation, not live — a mid-session OS setting
-    // change would need a scene restart to take effect, which is fine here.
-    this.reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    // Motion is driven by the user's in-app preference, NOT the OS
+    // prefers-reduced-motion setting — the animated bay is the whole point,
+    // and Windows commonly reports "reduce" (animation effects off) for users
+    // who very much want to watch their mechs walk. Live-toggled via setState.
+    this.reducedMotion = this.resolveReduceMotion()
     this.cameras.main.setBackgroundColor('#0a0805')
     this.input.mouse?.disableContextMenu()
     // Frame the bay and match the camera zoom to the render resolution. Also

@@ -178,6 +178,17 @@ export function registerIpc(opts: IpcDeps): void {
   )
   ipcMain.handle(IPC.SECRETS_STATUS, () => secrets.getStatus())
 
+  ipcMain.handle(IPC.SETTINGS_UPDATE, (_e, patch: { reduceMotion?: boolean }) => {
+    state.updateState((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        ...(typeof patch.reduceMotion === 'boolean' ? { reduceMotion: patch.reduceMotion } : {})
+      }
+    }))
+    return { ok: true }
+  })
+
   // Broadcast every state change to renderer.
   state.on('stateChanged', (s) => {
     if (!win.isDestroyed()) {

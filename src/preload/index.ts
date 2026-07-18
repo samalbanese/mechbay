@@ -69,7 +69,9 @@ const mechbayApi = {
     ipcRenderer.invoke(IPC.COMPANION_CONFIGURE, payload),
   secretsSet: (runtime: AgentFamily, value: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke(IPC.SECRETS_SET, { runtime, value }),
-  secretsStatus: (): Promise<Record<AgentFamily, boolean>> => ipcRenderer.invoke(IPC.SECRETS_STATUS)
+  secretsStatus: (): Promise<Record<AgentFamily, boolean>> => ipcRenderer.invoke(IPC.SECRETS_STATUS),
+  updateSettings: (patch: { reduceMotion?: boolean }): Promise<SimpleActionResult> =>
+    ipcRenderer.invoke(IPC.SETTINGS_UPDATE, patch)
 }
 
 export type MechBayApi = typeof mechbayApi
