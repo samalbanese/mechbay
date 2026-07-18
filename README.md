@@ -6,9 +6,24 @@ _A BattleTech-inspired command bay for AI coding agents._
 
 MechBay is an Electron desktop app for deploying real coding agents as mech-class companions. Drag a mech onto an isometric facility that represents a real project directory, give it a task, and follow the live output in the command-bay HUD.
 
-![MechBay — isometric command bay](docs/screenshot-bay.png)
+![MechBay demo — boot, deploy, live mission log, debrief](docs/demo.gif)
 
-_Demo gif coming soon._
+_Everything above is the real app: a mech deployed onto a facility, a live mission log, and a Mission Debrief backed by an actual git diff. Captured start-to-finish by `npm run capture:demo`._
+
+## Try it in 60 seconds — no API keys
+
+You don't need any agent CLI installed to feel the loop:
+
+```bash
+git clone https://github.com/samalbanese/mechbay.git
+cd mechbay
+npm install
+npm run demo
+```
+
+Demo mode boots the bay with a built-in simulation runtime behind every mech. Drag any mech onto the seeded Reactor Control facility: it walks over, streams a scripted mission log in that mech's voice, edits real files in a real git-initialized workspace, and returns with a Mission Debrief showing a genuine diff. Nothing downstream of the runner is mocked — demo mode swaps only the agent process itself. Your real bay state is untouched (demo persists to a separate store), and the HUD shows a `◈ SIMULATION` badge so there's no confusion about which world you're in.
+
+Have a real agent CLI installed? `npm run dev` and deploy for real.
 
 ## What it does
 
@@ -62,7 +77,7 @@ Stored keys are optional: existing environment variables keep working when no
 stored key exists. When both are present, the stored key wins because it is the
 explicit in-app choice.
 
-## Quickstart
+## Quickstart (real agents)
 
 Requirements: Node.js 20+, npm, and git on `PATH` (git powers Mission Debrief). MechBay runs on Windows, macOS, and Linux; it is developed on Windows. Install at least one runtime from the table above.
 
@@ -72,6 +87,38 @@ cd mechbay
 npm install
 npm run dev
 ```
+
+## How it's built
+
+```mermaid
+flowchart LR
+  subgraph renderer["Renderer (React 19 + Phaser 3)"]
+    HUD["HUD, modals, Journal"]
+    BAY["Isometric BayScene"]
+  end
+  subgraph preload["Preload"]
+    API["window.mechbay bridge"]
+  end
+  subgraph main["Electron main"]
+    IPCR["Typed IPC registry"]
+    STATE["StateManager (persisted)"]
+    RUN["Runner boundary"]
+    SOUL["soul.md + memory.md"]
+    DIFF["git diff capture"]
+  end
+  CLI["claude / codex / gemini /\nkimi / your CLI / SimRunner"]
+
+  HUD <--> API
+  BAY <--> API
+  API <--> IPCR
+  IPCR <--> STATE
+  IPCR --> RUN
+  RUN -->|spawn + stream| CLI
+  RUN --> DIFF
+  STATE --> SOUL
+```
+
+One `Runner` interface is the entire boundary between MechBay and the outside world — Claude Code, Codex, Gemini, Kimi, a bring-your-own CLI, and the demo-mode simulator are each a drop-in implementation of it. Everything crossing the Electron IPC boundary is a serializable type declared in one shared registry, and every channel name lives in a single constants file. The suite is 297 unit and integration tests plus a typecheck gate on CI.
 
 ## Status
 
@@ -132,6 +179,8 @@ docs/
 
 ```bash
 npm run dev          # start Electron with hot reload
+npm run demo         # start in demo mode — every mech deployable, no API keys
+npm run capture:demo # record docs/demo.gif automatically (Playwright + ffmpeg)
 npm run typecheck    # type-check main and renderer code
 npm test             # run the Vitest suite
 npm run test:watch   # run Vitest in watch mode
