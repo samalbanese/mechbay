@@ -51,7 +51,27 @@ function createWindow(): BrowserWindow {
   return mainWindow
 }
 
+// Single-instance lock: a second launch focuses the existing window instead
+// of starting a competing process. Two instances would fight over Chromium's
+// GPU disk cache (the benign "Unable to move the cache: Access is denied" boot
+// error) AND — the real hazard — both write the same electron-store state file
+// and could clobber each other's saved bay. First instance wins; later
+// launches bounce to it.
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  app.quit()
+}
+
+app.on('second-instance', () => {
+  const [existing] = BrowserWindow.getAllWindows()
+  if (existing) {
+    if (existing.isMinimized()) existing.restore()
+    existing.focus()
+  }
+})
+
 app.whenReady().then(() => {
+  if (!gotSingleInstanceLock) return
   electronApp.setAppUserModelId('com.sam.mechbay')
 
   app.on('browser-window-created', (_, window) => {
