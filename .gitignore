@@ -31,3 +31,10 @@ coverage/
 
 # Generated audit/report HTML (kept local, uploaded manually)
 artifacts/
+
+# Internal AI-build session diary — kept locally, not part of the public repo
+docs/superpowers/
+docs/debriefs/
+docs/history/
+docs/overnight-prep/
+docs/smoke-results/
