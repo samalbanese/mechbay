@@ -3,6 +3,7 @@ import type { AppState, Deployment, FacilityType, MechClass } from '../../../sha
 import { bus } from '../bus'
 import { colors, type } from '../theme'
 import { computeFacingFlipX, computeWalkBob, computeWalkFrame } from './bay-animation'
+import { canvasPointToPage } from './bay-layout'
 import { computeDeploymentActions } from './deployment-transitions'
 
 import atlasUrl from '../../../../assets/mechs/atlas-poc.png?url'
@@ -31,6 +32,19 @@ const TILE_H = 64
 const GRID_W = 16
 const GRID_H = 16
 const DROP_RADIUS = 100
+
+interface DemoBayLayout {
+  mechs: Record<string, { x: number; y: number }>
+  facilities: Record<string, { x: number; y: number }>
+  updatedAt: number
+}
+
+declare global {
+  interface Window {
+    __mechbayBayLayout?: DemoBayLayout
+    __mechbayState?: AppState
+  }
+}
 
 /**
  * Logical design viewport the camera framing was tuned against, and the
@@ -120,6 +134,8 @@ const CLICK_DRAG_THRESHOLD = 8
  */
 export class BayScene extends Phaser.Scene {
   private state: AppState | null = null
+  private demoLayoutEnabled = false
+  private demoLayoutSignature = ''
   private mechSprites = new Map<string, Phaser.GameObjects.Image>()
   private facilitySprites = new Map<string, Phaser.GameObjects.Image>()
   private facilityLabels = new Map<string, Phaser.GameObjects.Text>()
@@ -158,6 +174,7 @@ export class BayScene extends Phaser.Scene {
   setState(state: AppState): void {
     const prev = this.state
     this.state = state
+    if (this.demoLayoutEnabled) window.__mechbayState = state
     const nextReduceMotion = this.resolveReduceMotion()
     if (this.scene.isActive()) {
       // Apply a live toggle to existing entities before render() runs — new
@@ -264,6 +281,16 @@ export class BayScene extends Phaser.Scene {
     this.drawGround()
     if (this.state) this.render()
 
+    void window.mechbay
+      .getAppMode()
+      .then(({ demo }) => {
+        if (!demo) return
+        this.demoLayoutEnabled = true
+        if (this.state) window.__mechbayState = this.state
+        this.publishDemoLayout()
+      })
+      .catch((error) => console.warn('[BayScene] Could not resolve app mode:', error))
+
     // Scene-level pointerup fires for every release, including those
     // landing on interactive sprites (mechs / facilities). We only want
     // the empty-tile handler when: (a) no interactive object was under
@@ -318,12 +345,37 @@ export class BayScene extends Phaser.Scene {
    * driven by tweens/timers instead of update().
    */
   update(): void {
-    if (!this.selectedCompanionId || !this.selectionRing) return
-    const sprite = this.mechSprites.get(this.selectedCompanionId)
-    if (!sprite) return
-    this.selectionRing.setPosition(sprite.x, sprite.y + MECH_DISPLAY_SIZE * 0.42)
-    // Track depth too — the mech's depth is now live while it walks.
-    this.selectionRing.setDepth(Math.max(1, sprite.depth - 1))
+    if (this.demoLayoutEnabled) this.publishDemoLayout()
+    if (this.selectedCompanionId && this.selectionRing) {
+      const sprite = this.mechSprites.get(this.selectedCompanionId)
+      if (!sprite) return
+      this.selectionRing.setPosition(sprite.x, sprite.y + MECH_DISPLAY_SIZE * 0.42)
+      // Track depth too — the mech's depth is now live while it walks.
+      this.selectionRing.setDepth(Math.max(1, sprite.depth - 1))
+    }
+  }
+
+  private publishDemoLayout(): void {
+    if (!this.demoLayoutEnabled || !this.sys.game.canvas) return
+
+    const camera = this.cameras.main
+    const canvasRect = this.sys.game.canvas.getBoundingClientRect()
+    const gameSize = this.scale.gameSize
+    const toPage = (sprite: Phaser.GameObjects.Image): { x: number; y: number } => {
+      const canvasPoint = Phaser.GameObjects.GetCalcMatrix(sprite, camera).calc.transformPoint(0, 0)
+      return canvasPointToPage(canvasPoint, canvasRect, gameSize)
+    }
+    const mechs = Object.fromEntries(
+      [...this.mechSprites].map(([id, sprite]) => [id, toPage(sprite)])
+    )
+    const facilities = Object.fromEntries(
+      [...this.facilitySprites].map(([id, sprite]) => [id, toPage(sprite)])
+    )
+    const signature = JSON.stringify({ mechs, facilities })
+    if (signature === this.demoLayoutSignature) return
+
+    this.demoLayoutSignature = signature
+    window.__mechbayBayLayout = { mechs, facilities, updatedAt: Date.now() }
   }
 
   /**
@@ -522,6 +574,7 @@ export class BayScene extends Phaser.Scene {
         this.workLights.delete(id)
       }
     }
+    this.publishDemoLayout()
   }
 
   private handleDragEnd(companionId: string, sprite: Phaser.GameObjects.Image): void {
@@ -1136,6 +1189,12 @@ export class BayScene extends Phaser.Scene {
     this.facilityLabels.clear()
     this.destroySelectionRing()
     this.selectedCompanionId = null
+    if (this.demoLayoutEnabled) {
+      delete window.__mechbayBayLayout
+      delete window.__mechbayState
+    }
+    this.demoLayoutEnabled = false
+    this.demoLayoutSignature = ''
   }
 
   /**
