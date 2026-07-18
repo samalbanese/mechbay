@@ -322,6 +322,8 @@ export class BayScene extends Phaser.Scene {
     const sprite = this.mechSprites.get(this.selectedCompanionId)
     if (!sprite) return
     this.selectionRing.setPosition(sprite.x, sprite.y + MECH_DISPLAY_SIZE * 0.42)
+    // Track depth too — the mech's depth is now live while it walks.
+    this.selectionRing.setDepth(Math.max(1, sprite.depth - 1))
   }
 
   /**
@@ -375,8 +377,7 @@ export class BayScene extends Phaser.Scene {
       // back to full texture height.
       sprite.setData('baseScaleY', sprite.scaleY)
       sprite.setData('mechClass', companion.mechClass)
-      // Depth by y so mechs further south render on top of mechs further north.
-      sprite.setDepth(100 + s.y)
+      this.updateMechDepth(sprite, s.y)
       sprite.setInteractive({ draggable: true, pixelPerfect: false })
       this.input.setDraggable(sprite)
 
@@ -394,6 +395,7 @@ export class BayScene extends Phaser.Scene {
       sprite.on('drag', (_p: Phaser.Input.Pointer, dragX: number, dragY: number) => {
         sprite.x = dragX
         sprite.y = dragY
+        this.updateMechDepth(sprite)
         // Mark as dragging if moved more than threshold
         if (Math.hypot(dragX - dragStartX, dragY - dragStartY) > CLICK_DRAG_THRESHOLD) {
           isDragging = true
@@ -543,7 +545,8 @@ export class BayScene extends Phaser.Scene {
       x: home.x,
       y: home.y - MECH_DISPLAY_SIZE * 0.35,
       duration: 300,
-      ease: 'Back.easeOut'
+      ease: 'Back.easeOut',
+      onUpdate: () => this.updateMechDepth(sprite)
     })
   }
 
@@ -609,6 +612,9 @@ export class BayScene extends Phaser.Scene {
       onUpdate: (tween) => {
         sprite.x = Phaser.Math.Linear(startX, target.x, progress.t)
         const baseY = Phaser.Math.Linear(startY, targetY, progress.t)
+        // Depth from the un-bobbed base position so two mechs at the same
+        // tile don't z-fight on the bob oscillation.
+        this.updateMechDepth(sprite, baseY + MECH_DISPLAY_SIZE * 0.35)
         if (this.reducedMotion) {
           sprite.y = baseY
           return
@@ -628,6 +634,7 @@ export class BayScene extends Phaser.Scene {
         sprite.x = target.x
         sprite.y = targetY
         sprite.angle = 0
+        this.updateMechDepth(sprite, target.y)
         if (useWalkFrames && mechClass) this.applyMechTexture(sprite, MECH_KEY[mechClass])
         this.stopFootDust(companionId)
         this.playArrivalBurst(companionId, sprite)
@@ -705,6 +712,34 @@ export class BayScene extends Phaser.Scene {
       ease: 'Sine.easeInOut'
     })
     this.idleBreathTweens.set(companionId, tween)
+  }
+
+  /**
+   * Depth-sort a mech by its feet (tile screen-y), re-derived every time the
+   * sprite moves — walk, drag, snap-back. Depth was previously set once at
+   * creation from the HOME tile, so a mech that walked south past a facility
+   * kept a stale, smaller depth than the building (facilities sort at
+   * 50 + y, mechs at 100 + y): the building rendered on top AND won Phaser's
+   * depth-ordered input hit-test, making the deployed mech unclickable. The
+   * +100 base guarantees a mech at a facility's tile sorts in front of the
+   * building, so it always stays clickable while working or dead-in-field.
+   */
+  private updateMechDepth(sprite: Phaser.GameObjects.Image, feetY?: number): void {
+    const y = feetY ?? sprite.y + MECH_DISPLAY_SIZE * 0.35
+    sprite.setDepth(100 + y)
+  }
+
+  /**
+   * Where a mech parks when deployed: one tile south-east of the facility —
+   * screen-space directly below it — so it reads as standing at the entrance
+   * instead of on the roof, keeps the building art visible, and (with live
+   * depth sorting) is always fully clickable. Clamped at the grid edge.
+   */
+  private facilityStandTile(tile: { x: number; y: number }): { x: number; y: number } {
+    return {
+      x: Math.min(GRID_W - 1, tile.x + 1),
+      y: Math.min(GRID_H - 1, tile.y + 1)
+    }
   }
 
   /**
@@ -1117,7 +1152,7 @@ export class BayScene extends Phaser.Scene {
       switch (action.kind) {
         case 'walk-to-facility': {
           const facility = next.facilities.find((candidate) => candidate.id === action.facilityId)
-          if (facility) void this.walkTo(action.companionId, facility.tile)
+          if (facility) void this.walkTo(action.companionId, this.facilityStandTile(facility.tile))
           break
         }
         case 'start-working': {
