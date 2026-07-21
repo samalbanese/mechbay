@@ -10,31 +10,22 @@ state.json
 state.json.backup
 mechbay/logs/
 
-# Brainstorm/superpowers cache (artifacts already preserved on disk for blog ref)
-.superpowers/
-
-# Vitest
+# Test artifacts
 coverage/
 .vitest-cache/
 
-# Scratch (cross-family review prompts/outputs, Codex/Kimi artifacts)
+# Scratch
 .tmp/
-
-# Git worktrees for parallel agent work
-.worktrees/
+.claude/
+artifacts/
 
 # TypeScript incremental build artifacts
 *.tsbuildinfo
 
-# Local AI-agent session config
-.claude/
-
-# Generated audit/report HTML (kept local, uploaded manually)
-artifacts/
-
-# Internal AI-build session diary — kept locally, not part of the public repo
-docs/superpowers/
-docs/debriefs/
-docs/history/
-docs/overnight-prep/
-docs/smoke-results/
+# Root markdown and docs are local working notes unless listed below
+/*.md
+!/README.md
+!/CONTRIBUTING.md
+docs/*
+!docs/demo.gif
+!docs/screenshot-bay.png

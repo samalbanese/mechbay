@@ -26,7 +26,7 @@ npm run build
 ## Code conventions
 
 - Use Conventional Commit-style subjects: `feat:`, `fix:`, `chore:`, or `docs:`.
-- For main-process modules, write the focused unit test first, see it fail, implement the module, then wire its IPC surface.
+- For main-process modules, work test-first: write the focused unit test, see it fail, implement the module, then wire its IPC surface.
 - React renderer source lives in `src/renderer/src/`; the outer `src/renderer/` directory only holds renderer entry files.
 - Define and import IPC channels only through `src/shared/ipc-channels.ts`. Do not hand-type channel strings elsewhere.
 

@@ -6,11 +6,11 @@ _A BattleTech-inspired command bay for AI coding agents._
 
 MechBay is an Electron desktop app for deploying real coding agents as mech-class companions. Drag a mech onto an isometric facility that represents a real project directory, give it a task, and follow the live output in the command-bay HUD.
 
-![MechBay demo — boot, deploy, live mission log, debrief](docs/demo.gif)
+![MechBay demo: boot, deploy, live mission log, debrief](docs/demo.gif)
 
 _Everything above is the real app: a mech deployed onto a facility, a live mission log, and a Mission Debrief backed by an actual git diff. Captured start-to-finish by `npm run capture:demo`._
 
-## Try it in 60 seconds — no API keys
+## Try it in 60 seconds (no API keys)
 
 You don't need any agent CLI installed to feel the loop:
 
@@ -21,7 +21,7 @@ npm install
 npm run demo
 ```
 
-Demo mode boots the bay with a built-in simulation runtime behind every mech. Drag any mech onto the seeded Reactor Control facility: it walks over, streams a scripted mission log in that mech's voice, edits real files in a real git-initialized workspace, and returns with a Mission Debrief showing a genuine diff. Nothing downstream of the runner is mocked — demo mode swaps only the agent process itself. Your real bay state is untouched (demo persists to a separate store), and the HUD shows a `◈ SIMULATION` badge so there's no confusion about which world you're in.
+Demo mode boots the bay with a built-in simulation runtime behind every mech. Drag any mech onto the seeded Reactor Control facility: it walks over, streams a scripted mission log in that mech's voice, edits real files in a real git-initialized workspace, and returns with a Mission Debrief showing a genuine diff. Nothing downstream of the runner is mocked; demo mode swaps only the agent process itself. Your real bay state is untouched (demo persists to a separate store), and the HUD shows a `◈ SIMULATION` badge so there's no confusion about which world you're in.
 
 Have a real agent CLI installed? `npm run dev` and deploy for real.
 
@@ -53,7 +53,7 @@ _Runtime integrations verified as of July 2026; MechBay degrades any unavailable
 
 ## Any mech, any runtime (bring your own key)
 
-Every mech's runtime is reassignable from the UI — you're not stuck with the family it launched with. Select a mech, open its panel, and the **RUNTIME** section lets you:
+Every mech's runtime is reassignable from the UI, so you're not stuck with the family it launched with. Select a mech, open its panel, and the **RUNTIME** section lets you:
 
 - Pick any of the five runtimes from a dropdown (the mech's native family is marked `— DEFAULT`).
 - Set an optional model override, passed straight through to that runtime's CLI:
@@ -66,7 +66,7 @@ Every mech's runtime is reassignable from the UI — you're not stuck with the f
 | Kimi (Fireworks) | `--model`                                     |
 | Custom CLI       | `{MODEL}` placeholder in `MECHBAY_HERMES_CMD` |
 
-Press **APPLY** and MechBay re-probes availability for the new runtime immediately — the availability badge updates without a restart.
+Press **APPLY** and MechBay re-probes availability for the new runtime immediately; the availability badge updates without a restart.
 
 Open **⚙ SETTINGS** to rename mechs and manage runtime credentials. Claude Code
 continues to use its own login. For Codex, Gemini, Kimi, and custom runtimes,
@@ -118,11 +118,11 @@ flowchart LR
   STATE --> SOUL
 ```
 
-One `Runner` interface is the entire boundary between MechBay and the outside world — Claude Code, Codex, Gemini, Kimi, a bring-your-own CLI, and the demo-mode simulator are each a drop-in implementation of it. Everything crossing the Electron IPC boundary is a serializable type declared in one shared registry, and every channel name lives in a single constants file. The suite is 297 unit and integration tests plus a typecheck gate on CI.
+One `Runner` interface is the entire boundary between MechBay and the outside world. Claude Code, Codex, Gemini, Kimi, a bring-your-own CLI, and the demo-mode simulator are each a drop-in implementation of it. Everything crossing the Electron IPC boundary is a serializable type declared in one shared registry, and every channel name lives in a single constants file. The suite is 297 unit and integration tests plus a typecheck gate on CI.
 
 ## Status
 
-**v1.3 — feature-complete MVP with in-app mech and bay configuration.**
+**v1.3: feature-complete MVP with in-app mech and bay configuration.**
 
 ## Configuring runtimes
 
@@ -169,17 +169,14 @@ test/
   integration/       Deployment lifecycle coverage
 assets/              Mech and facility sprites
 scripts/             Kimi Fireworks wrapper and chromakey utility
-docs/
-  DECISIONS.md       Architecture and product decisions
-  manual-smoke-tests.md  Release smoke-test checklist
-  history/           Archived project handoffs and overnight reports
+docs/                Demo gif and screenshots
 ```
 
 ## Development
 
 ```bash
 npm run dev          # start Electron with hot reload
-npm run demo         # start in demo mode — every mech deployable, no API keys
+npm run demo         # start in demo mode: every mech deployable, no API keys
 npm run capture:demo # record docs/demo.gif automatically (Playwright + ffmpeg)
 npm run typecheck    # type-check main and renderer code
 npm test             # run the Vitest suite
@@ -190,14 +187,6 @@ npm run build:mac    # build a macOS package
 npm run build:linux  # build a Linux package
 npm run chromakey    # process mech and facility sprites
 ```
-
-Before publishing a change, use the manual release checklist in [docs/manual-smoke-tests.md](docs/manual-smoke-tests.md).
-
-## Development history
-
-MechBay's six MVP waves built the Electron deployment plumbing, isometric game layer, asset pass, runtime roster and queue, companion memory plus file browsing, then release polish and recovery flows.
-
-The decisions behind those waves, including tradeoffs and deferred ideas, live in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## License
 
