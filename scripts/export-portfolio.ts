@@ -39,7 +39,11 @@ if (media)
 // Accelerate the captured frames to a concise 24-second walkthrough.
 const inputFps = recording.count / 24
 const input = ['-framerate', String(inputFps), '-i', join(recording.frames, 'frame-%05d.jpg')]
-const filter = 'fps=12,scale=1280:800:flags=lanczos'
+// JPEG captures use full-range color. Convert the pixels, not just the metadata:
+// Windows hardware video decoders can reject the inherited full-range stream.
+const filter =
+  'fps=12,scale=1280:800:flags=lanczos:in_range=pc:out_range=tv,format=yuv420p,sidedata=mode=delete:type=ICC_PROFILE'
+const colorOptions = ['-pix_fmt', 'yuv420p', '-color_range', 'tv']
 const mp4 = join(root, 'site', 'demo.mp4')
 const webm = join(root, 'site', 'demo.webm')
 const passlog = join(output, 'encode-pass')
@@ -57,6 +61,7 @@ ffmpeg([
   passlog,
   '-preset',
   'slow',
+  ...colorOptions,
   '-an',
   '-f',
   'null',
@@ -76,20 +81,52 @@ ffmpeg([
   passlog,
   '-preset',
   'slow',
-  '-pix_fmt',
-  'yuv420p',
+  ...colorOptions,
   '-movflags',
   '+faststart',
   '-an',
   mp4
 ])
-ffmpeg([...input, '-vf', filter, '-c:v', 'libvpx-vp9', '-b:v', '180k', '-crf', '38', '-an', webm])
+ffmpeg([
+  ...input,
+  '-vf',
+  filter,
+  '-c:v',
+  'libvpx-vp9',
+  '-b:v',
+  '180k',
+  '-crf',
+  '38',
+  ...colorOptions,
+  '-an',
+  webm
+])
 for (const [file, extension] of [
   [mp4, 'mp4'],
   [webm, 'webm']
 ]) {
   if (statSync(file).size > 700 * 1024)
     throw new Error(`${extension} exceeds the portfolio media budget`)
+  const probe = spawnSync(
+    'ffprobe',
+    [
+      '-v',
+      'error',
+      '-select_streams',
+      'v:0',
+      '-show_entries',
+      'stream=pix_fmt,color_range',
+      '-of',
+      'json',
+      file
+    ],
+    { encoding: 'utf8', windowsHide: true }
+  )
+  if (probe.status !== 0)
+    throw new Error(probe.stderr || probe.error?.message || 'Could not verify video encoding')
+  const stream = JSON.parse(probe.stdout).streams?.[0]
+  if (stream?.pix_fmt !== 'yuv420p' || stream?.color_range !== 'tv')
+    throw new Error(`${extension} must use 8-bit YUV 4:2:0 with limited color range`)
   if (media) copyFileSync(file, join(media, `mechbay-demo.${extension}`))
 }
 const gif = join(root, 'docs', 'demo.gif')
@@ -122,6 +159,7 @@ const manifest = {
   mode: 'Isolated simulation; real file edits and git-backed debrief',
   sourceSize: '1600x1000',
   videoDuration: '24 seconds; accelerated playback',
+  videoEncoding: '8-bit YUV 4:2:0, limited color range; H.264 MP4 and VP9 WebM',
   screenshots: ['command', 'mission', 'debrief'],
   videoBytes: { mp4: statSync(mp4).size, webm: statSync(webm).size }
 }

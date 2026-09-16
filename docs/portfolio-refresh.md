@@ -16,7 +16,7 @@ Agents should feel like persistent companions, not anonymous buttons. A mech rep
 
 ## Reproduce captures
 
-Requires Node 22.18+ (or another version supporting TypeScript stripping), git, ffmpeg, and the repository dependencies.
+Requires Node 22.18+ (or another version supporting TypeScript stripping), git, ffmpeg/ffprobe, and the repository dependencies.
 
 ```powershell
 npm run capture:portfolio
@@ -34,7 +34,13 @@ Raw screenshots, verification evidence, and frame sequences are in ignored `arti
 - The recorded app completed a simulation mission with two actual changed files. Opening the resulting debrief again, changing crew, opening Journal, browsing a linked project, and resizing to a laptop window were verified without renderer errors.
 - The consulting site reported zero errors, warnings, or hints and built successfully.
 - Both sites passed overflow and media checks at 320, 390, 768, 1024, and 1440px. The portfolio gallery also works without JavaScript. Desktop and phone screenshots are in the portfolio checkout's `output/mechbay-refresh` directory.
-- MP4: 607,424 bytes. WebM: 460,780 bytes. Both are 24-second recordings; screenshots are 1600×1000.
+- MP4: 608,548 bytes. WebM: 420,214 bytes. Both are 24-second recordings; screenshots are 1600×1000.
+
+## Browser playback correction
+
+The initial export inherited full-range color from the JPEG capture frames. It decoded in headless Chromium but failed in the Windows in-app browser. Converting the pixels to limited-range 8-bit YUV 4:2:0 fixed playback in that same browser. Both H.264 and VP9 exports now use this conversion, omit the capture image's ICC side data, and pass an ffprobe encoding check before publication. The video URLs have a new version to bypass cached broken files.
+
+`node --experimental-strip-types scripts/verify-video.ts [portfolio-url]` checks both formats through the last frame at desktop and phone widths. Metadata loading or a single decoded frame is insufficient verification for this failure. Playback evidence and screenshots are saved in ignored `artifacts/video-compat`.
 
 ## Scope limits
 

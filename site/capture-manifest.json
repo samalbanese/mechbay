@@ -3,13 +3,14 @@
   "mode": "Isolated simulation; real file edits and git-backed debrief",
   "sourceSize": "1600x1000",
   "videoDuration": "24 seconds; accelerated playback",
+  "videoEncoding": "8-bit YUV 4:2:0, limited color range; H.264 MP4 and VP9 WebM",
   "screenshots": [
     "command",
     "mission",
     "debrief"
   ],
   "videoBytes": {
-    "mp4": 607424,
-    "webm": 460780
+    "mp4": 608548,
+    "webm": 420214
   }
 }
