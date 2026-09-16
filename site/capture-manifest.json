@@ -1,0 +1,15 @@
+{
+  "capturedAt": "2026-09-16T18:18:23.479Z",
+  "mode": "Isolated simulation; real file edits and git-backed debrief",
+  "sourceSize": "1600x1000",
+  "videoDuration": "24 seconds; accelerated playback",
+  "screenshots": [
+    "command",
+    "mission",
+    "debrief"
+  ],
+  "videoBytes": {
+    "mp4": 607424,
+    "webm": 460780
+  }
+}

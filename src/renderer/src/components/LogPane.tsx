@@ -50,7 +50,7 @@ export function LogPane({ logs, deployments = [] }: LogPaneProps): React.JSX.Ele
             isSeparator: true,
             deploymentLabel: deployment
               ? `${deployment.companionName} · ${new Date(deployment.startedAt).toLocaleTimeString()}`
-              : 'New deployment',
+              : 'New deployment'
           })
         }
       }
@@ -61,7 +61,7 @@ export function LogPane({ logs, deployments = [] }: LogPaneProps): React.JSX.Ele
         text: log.text,
         timestamp: log.timestamp,
         deploymentId: log.deploymentId,
-        thoughtKind: log.thoughtKind,
+        thoughtKind: log.thoughtKind
       })
 
       lastDeploymentId = log.deploymentId
@@ -79,7 +79,7 @@ export function LogPane({ logs, deployments = [] }: LogPaneProps): React.JSX.Ele
         text: `… ${hiddenCount} earlier entries`,
         timestamp: 0,
         isSeparator: true,
-        deploymentLabel: undefined,
+        deploymentLabel: undefined
       })
       return trimmed
     }
@@ -144,9 +144,16 @@ export function LogPane({ logs, deployments = [] }: LogPaneProps): React.JSX.Ele
   if (logs.length === 0) {
     return (
       <div style={emptyStateStyle}>
-        <span style={emptyStateTextStyle}>
-          (drag a mech onto a facility to deploy · click a facility to browse its files)
-        </span>
+        <div style={emptyStateTextStyle}>
+          <div className="eyebrow">MISSION CHANNEL / STANDING BY</div>
+          <h2 className="dialog-heading" style={{ fontSize: 30, margin: '14px 0' }}>
+            Every move, in view.
+          </h2>
+          <p style={{ fontFamily: type.sans, maxWidth: 250, lineHeight: 1.7 }}>
+            Prepare a deployment in Operations. Your mech’s output will stream here as the mission
+            unfolds.
+          </p>
+        </div>
       </div>
     )
   }
@@ -185,9 +192,7 @@ function LogLineComponent({ line }: { line: LogLine }): React.JSX.Element {
     return (
       <div style={separatorStyle}>
         <div style={separatorLineStyle} />
-        {line.deploymentLabel && (
-          <span style={separatorLabelStyle}>{line.deploymentLabel}</span>
-        )}
+        {line.deploymentLabel && <span style={separatorLabelStyle}>{line.deploymentLabel}</span>}
         {line.text && <span style={separatorTextStyle}>{line.text}</span>}
         <div style={separatorLineStyle} />
       </div>
@@ -239,17 +244,17 @@ const containerStyle: React.CSSProperties = {
   flex: 1,
   minHeight: 0,
   display: 'flex',
-  flexDirection: 'column',
+  flexDirection: 'column'
 }
 
 const scrollAreaStyle: React.CSSProperties = {
   background: colors.bgPanelDark,
-  padding: 8,
+  padding: 16,
   flex: 1,
   overflow: 'auto',
   fontFamily: type.mono,
   fontSize: 11,
-  lineHeight: 1.5,
+  lineHeight: 1.5
 }
 
 const emptyStateStyle: React.CSSProperties = {
@@ -260,13 +265,12 @@ const emptyStateStyle: React.CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
   fontFamily: type.mono,
-  fontSize: 11,
+  fontSize: 11
 }
 
 const emptyStateTextStyle: React.CSSProperties = {
   color: colors.textMuted,
-  fontStyle: 'italic',
-  textAlign: 'center',
+  textAlign: 'center'
 }
 
 const lineStyle: React.CSSProperties = {
@@ -276,7 +280,7 @@ const lineStyle: React.CSSProperties = {
   borderLeftWidth: 2,
   borderLeftStyle: 'solid',
   paddingLeft: 8,
-  marginBottom: 1,
+  marginBottom: 1
 }
 
 const streamBadgeStyle: React.CSSProperties = {
@@ -284,13 +288,13 @@ const streamBadgeStyle: React.CSSProperties = {
   textTransform: 'uppercase',
   letterSpacing: '0.05em',
   flexShrink: 0,
-  minWidth: 50,
+  minWidth: 50
 }
 
 const lineTextStyle: React.CSSProperties = {
   color: colors.textPrimary,
   whiteSpace: 'pre-wrap',
-  wordBreak: 'break-word',
+  wordBreak: 'break-word'
 }
 
 const separatorStyle: React.CSSProperties = {
@@ -301,26 +305,26 @@ const separatorStyle: React.CSSProperties = {
   margin: '4px 0',
   color: colors.amber,
   fontSize: 10,
-  letterSpacing: '0.1em',
+  letterSpacing: '0.1em'
 }
 
 const separatorLineStyle: React.CSSProperties = {
   flex: 1,
   height: 1,
   background: colors.borderHud,
-  minWidth: 20,
+  minWidth: 20
 }
 
 const separatorLabelStyle: React.CSSProperties = {
   color: colors.amber,
   fontWeight: 'bold',
-  whiteSpace: 'nowrap',
+  whiteSpace: 'nowrap'
 }
 
 const separatorTextStyle: React.CSSProperties = {
   color: colors.textSecondary,
   fontStyle: 'italic',
-  whiteSpace: 'nowrap',
+  whiteSpace: 'nowrap'
 }
 
 const jumpButtonStyle: React.CSSProperties = {
@@ -337,21 +341,21 @@ const jumpButtonStyle: React.CSSProperties = {
   cursor: 'pointer',
   fontFamily: type.mono,
   boxShadow: `0 2px 8px ${colors.amberGlow}`,
-  zIndex: 10,
+  zIndex: 10
 }
 
 const intentCardStyle: React.CSSProperties = {
   borderLeft: `3px solid ${colors.cyan}`,
   background: colors.cyanTint,
   padding: 8,
-  margin: '6px 0',
+  margin: '6px 0'
 }
 
 const findingsCardStyle: React.CSSProperties = {
   borderLeft: `3px solid ${colors.amber}`,
   background: colors.amberTint,
   padding: 8,
-  margin: '6px 0',
+  margin: '6px 0'
 }
 
 const thoughtTagStyle: React.CSSProperties = {
@@ -359,7 +363,7 @@ const thoughtTagStyle: React.CSSProperties = {
   textTransform: 'uppercase',
   letterSpacing: '0.1em',
   fontWeight: 'bold',
-  marginBottom: 4,
+  marginBottom: 4
 }
 
 const thoughtBodyStyle: React.CSSProperties = {
@@ -367,5 +371,5 @@ const thoughtBodyStyle: React.CSSProperties = {
   fontSize: 12,
   lineHeight: 1.5,
   whiteSpace: 'pre-wrap',
-  wordBreak: 'break-word',
+  wordBreak: 'break-word'
 }

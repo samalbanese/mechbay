@@ -6,9 +6,15 @@ _A BattleTech-inspired command bay for AI coding agents._
 
 MechBay is an Electron desktop app for deploying real coding agents as mech-class companions. Drag a mech onto an isometric facility that represents a real project directory, give it a task, and follow the live output in the command-bay HUD.
 
-![MechBay demo: boot, deploy, live mission log, debrief](docs/demo.gif)
+![MechBay Command Edition: prepare a mission, deploy, watch the live log, and inspect the debrief](docs/demo.gif)
 
-_Everything above is the real app: a mech deployed onto a facility, a live mission log, and a Mission Debrief backed by an actual git diff. Captured start-to-finish by `npm run capture:demo`._
+_Recorded from the real desktop app in isolated simulation mode. The agent process is scripted; the file edits and git-backed Mission Debrief are real. Accelerated to a 24-second walkthrough with `npm run capture:portfolio`._
+
+## Command Edition
+
+The bay now puts the whole crew and mission loop in view: a selectable five-mech roster, keyboard-accessible mission preparation, live fleet counts, a sortie board, project controls, and debriefs you can reopen after a mission returns. The industrial command deck pairs the original isometric world with locally bundled Barlow and IBM Plex typography.
+
+![MechBay command deck with crew roster and mission control](docs/screenshot-bay.png)
 
 ## Try it in 60 seconds (no API keys)
 
@@ -118,11 +124,11 @@ flowchart LR
   STATE --> SOUL
 ```
 
-One `Runner` interface is the entire boundary between MechBay and the outside world. Claude Code, Codex, Gemini, Kimi, a bring-your-own CLI, and the demo-mode simulator are each a drop-in implementation of it. Everything crossing the Electron IPC boundary is a serializable type declared in one shared registry, and every channel name lives in a single constants file. The suite is 297 unit and integration tests plus a typecheck gate on CI.
+One `Runner` interface is the entire boundary between MechBay and the outside world. Claude Code, Codex, Gemini, Kimi, a bring-your-own CLI, and the demo-mode simulator are each a drop-in implementation of it. Everything crossing the Electron IPC boundary is a serializable type declared in one shared registry, and every channel name lives in a single constants file. The suite is 305 unit and integration tests plus a typecheck gate on CI.
 
 ## Status
 
-**v1.3: feature-complete MVP with in-app mech and bay configuration.**
+**Command Edition: a complete deployment and review experience, built on the v1.3 runtime architecture.**
 
 ## Configuring runtimes
 
@@ -178,6 +184,7 @@ docs/                Demo gif and screenshots
 npm run dev          # start Electron with hot reload
 npm run demo         # start in demo mode: every mech deployable, no API keys
 npm run capture:demo # record docs/demo.gif automatically (Playwright + ffmpeg)
+npm run capture:portfolio # build, verify the mission loop, capture screenshots, and refresh all project media
 npm run typecheck    # type-check main and renderer code
 npm test             # run the Vitest suite
 npm run test:watch   # run Vitest in watch mode

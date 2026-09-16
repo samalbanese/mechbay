@@ -50,11 +50,37 @@ export function DebriefModal(props: {
         aria-labelledby="mission-debrief-title"
         style={panelStyle}
       >
+        <div className="debrief-banner">
+          <div>
+            <div className="eyebrow">MISSION DEBRIEF / AFTER-ACTION REPORT</div>
+            <h2 className="dialog-heading">Objective complete.</h2>
+          </div>
+          <span className="debrief-check" aria-hidden="true">
+            ✓
+          </span>
+        </div>
         <div id="mission-debrief-title" style={titleStyle}>
           ■ MISSION DEBRIEF — {props.companion.name.toUpperCase()} ←{' '}
           {props.facility.name.toUpperCase()}
         </div>
         <div style={subtitleStyle}>AFTER-ACTION TELEMETRY</div>
+
+        {deployment.diffStats && (
+          <div className="debrief-summary" aria-label="Change summary">
+            <div>
+              <strong>{deployment.diffStats.filesChanged.toString().padStart(2, '0')}</strong>
+              <span>FILES CHANGED</span>
+            </div>
+            <div>
+              <strong>+{deployment.diffStats.insertions}</strong>
+              <span>LINES ADDED</span>
+            </div>
+            <div>
+              <strong>−{deployment.diffStats.deletions}</strong>
+              <span>LINES REMOVED</span>
+            </div>
+          </div>
+        )}
 
         <dl style={detailListStyle}>
           <div style={detailRowStyle}>
@@ -110,6 +136,11 @@ export function DebriefModal(props: {
           </section>
         )}
 
+        <p className="debrief-note">
+          Captured from the project’s working tree. Existing uncommitted changes may be included.
+          Line totals cover tracked text changes; new and binary files are counted without line
+          totals.
+        </p>
         <div style={actionRowStyle}>
           <button
             ref={dismissButtonRef}
@@ -140,9 +171,9 @@ const panelStyle: React.CSSProperties = {
   maxHeight: 'calc(100vh - 48px)',
   overflow: 'auto',
   background: colors.bgHud,
-  border: `2px solid ${colors.orange}`,
-  boxShadow: `0 0 24px ${colors.orangeGlow}`,
-  padding: 24,
+  border: `1px solid ${colors.amber}`,
+  boxShadow: '0 24px 100px #0008',
+  padding: 30,
   color: colors.textPrimary,
   fontFamily: type.mono
 }

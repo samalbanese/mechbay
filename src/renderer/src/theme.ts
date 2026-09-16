@@ -6,14 +6,14 @@
 export const colors = {
   // Backgrounds
   bg: '#0a0a0a',
-  bgPanel: '#111',
+  bgPanel: '#141615',
   bgPanelDark: '#0a0805',
-  bgHud: '#1a1510',
+  bgHud: '#171916',
   overlay: 'rgba(0, 0, 0, 0.75)',
 
   // Borders
   border: '#2a2a2a',
-  borderHud: '#2a2520',
+  borderHud: '#34372e',
 
   // DeployModal-specific tokens (migrated from hardcoded constants)
   bgPanelDarkAlt: '#0a0805', // was DARK_BG
@@ -24,13 +24,13 @@ export const colors = {
   statusFailedDark: '#c44', // darker shade for failed borders
 
   // Brand colors
-  orange: '#e85f00',
+  orange: '#efa54b',
   orangeHover: '#ff7a1a',
   orangeGlow: 'rgba(232, 95, 0, 0.4)',
-  amber: '#ffcc33',
+  amber: '#efc36d',
   amberGlow: 'rgba(255, 204, 51, 0.4)',
   amberTint: 'rgba(255, 204, 51, 0.08)',
-  cyan: '#00f0ff',
+  cyan: '#91c7bc',
   cyanGlow: 'rgba(0, 240, 255, 0.4)',
   cyanTint: 'rgba(0, 240, 255, 0.08)',
 
@@ -40,10 +40,10 @@ export const colors = {
   streamSystem: '#ffcc33',
 
   // Text
-  textPrimary: '#e0e0e0',
-  textSecondary: '#888',
-  textMuted: '#555',
-  textDark: '#666',
+  textPrimary: '#ecece2',
+  textSecondary: '#abb0a3',
+  textMuted: '#919687',
+  textDark: '#929588',
 
   // Status colors
   statusQueued: '#ffcc33',
@@ -60,8 +60,8 @@ export const colors = {
 }
 
 export const type = {
-  mono: "ui-monospace, 'Cascadia Code', Consolas, Menlo, monospace",
-  sans: 'system-ui, -apple-system, sans-serif',
+  mono: "'IBM Plex Mono', 'Cascadia Code', monospace",
+  sans: "'Barlow', sans-serif",
   labelTracking: '0.15em',
   hudTracking: '0.1em'
 }

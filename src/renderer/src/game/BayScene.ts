@@ -54,7 +54,7 @@ declare global {
  * same factor so the world framing stays put while gaining sharpness.
  */
 const BASE_VIEW_W = 1100
-const BASE_ZOOM = 0.65
+const BASE_ZOOM = 0.52
 
 /**
  * Heavy-mech walk feel. Mechs move at a constant ground speed (world px per
@@ -104,7 +104,7 @@ const FACILITY_KEY: Record<FacilityType, string> = {
 
 // Display height for mech sprites after downscaling from Gemini's ~1024 output.
 // Mechs hover at roughly 1 tile × 1.5 tile iso footprint.
-const MECH_DISPLAY_SIZE = 96
+const MECH_DISPLAY_SIZE = 120
 
 // Facilities span ~2 tiles wide × ~1.5 tiles tall on the grid.
 const FACILITY_DISPLAY_W = 224
@@ -269,7 +269,7 @@ export class BayScene extends Phaser.Scene {
     // and Windows commonly reports "reduce" (animation effects off) for users
     // who very much want to watch their mechs walk. Live-toggled via setState.
     this.reducedMotion = this.resolveReduceMotion()
-    this.cameras.main.setBackgroundColor('#0a0805')
+    this.cameras.main.setBackgroundColor('#101510')
     this.input.mouse?.disableContextMenu()
     // Frame the bay and match the camera zoom to the render resolution. Also
     // re-run it whenever the canvas is resized (window maximize, HiDPI change)
@@ -405,8 +405,23 @@ export class BayScene extends Phaser.Scene {
     for (let x = 0; x < GRID_W; x++) {
       for (let y = 0; y < GRID_H; y++) {
         const s = isoToScreen({ x, y })
-        this.add.image(s.x, s.y, 'ground').setDisplaySize(TILE_W, TILE_H).setDepth(0)
+        this.add.image(s.x, s.y, 'ground').setDisplaySize(TILE_W, TILE_H).setDepth(0).setAlpha(0.58)
       }
+    }
+    const perimeter = this.add.graphics().setDepth(1)
+    perimeter.lineStyle(2, 0xd1ba72, 0.5)
+    const corners = [
+      { x: -0.5, y: -0.5 },
+      { x: 15.5, y: -0.5 },
+      { x: 15.5, y: 15.5 },
+      { x: -0.5, y: 15.5 }
+    ].map(isoToScreen)
+    perimeter.strokePoints(corners, true)
+    perimeter.lineStyle(1, 0xbfd292, 0.22)
+    for (let i = 2; i < 16; i += 4) {
+      const start = isoToScreen({ x: i, y: 0 })
+      const end = isoToScreen({ x: i, y: 15 })
+      perimeter.lineBetween(start.x, start.y, end.x, end.y)
     }
   }
 
@@ -530,10 +545,10 @@ export class BayScene extends Phaser.Scene {
       // Facility label below the sprite
       const label = this.add
         .text(s.x, s.y + FACILITY_DISPLAY_H * 0.3, facility.name.toUpperCase(), {
-          fontSize: '12px',
-          color: '#e85f00',
-          fontFamily: 'Courier New',
-          fontStyle: 'bold',
+          fontSize: '20px',
+          color: '#e9d8a9',
+          fontFamily: 'IBM Plex Mono',
+          fontStyle: 'normal',
           stroke: '#000',
           strokeThickness: 3
         })
@@ -987,7 +1002,7 @@ export class BayScene extends Phaser.Scene {
    * stats panel, this drives the Phaser-side ring, and neither needs to
    * know about the other.
    */
-  private setSelectedCompanion(companionId: string): void {
+  setSelectedCompanion(companionId: string): void {
     if (this.selectedCompanionId === companionId) return
     this.selectedCompanionId = companionId
     this.destroySelectionRing()

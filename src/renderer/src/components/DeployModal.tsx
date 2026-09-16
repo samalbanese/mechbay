@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { Companion, Facility } from '../../../shared/types'
 import { filterPromptsFor, type QuickPrompt } from '../quickPrompts'
-import { colors } from '../theme'
+import { colors, type } from '../theme'
 
 /**
  * Modal overlay that collects a task prompt before firing a deploy.
@@ -22,6 +22,7 @@ interface DeployModalProps {
   onDeploy: (prompt: string, quickPrompt?: string) => void
   onCancel: () => void
   isLoading?: boolean
+  error?: string | null
 }
 
 export function DeployModal(props: DeployModalProps): React.JSX.Element {
@@ -194,7 +195,14 @@ export function DeployModal(props: DeployModalProps): React.JSX.Element {
       aria-modal="true"
       aria-labelledby="deploy-modal-title"
     >
-      <div ref={modalRef} style={panelStyle}>
+      <div ref={modalRef} style={panelStyle} className="deploy-dialog">
+        <div className="eyebrow">DEPLOYMENT AUTHORIZATION / BAY 01</div>
+        <h2 className="dialog-heading">Give your mech a mission.</h2>
+        {props.error && (
+          <p role="alert" className="deploy-error">
+            Deployment could not start: {props.error}
+          </p>
+        )}
         {/* Header */}
         <div style={headerRowStyle}>
           <div>
@@ -294,7 +302,7 @@ export function DeployModal(props: DeployModalProps): React.JSX.Element {
             onMouseLeave={() => setIsHoveredDeploy(false)}
             style={deployState.style}
             title={deployState.title}
-            aria-label={deployState.title}
+            aria-label="Deploy mission"
           >
             {deployState.text}
           </button>
@@ -324,10 +332,11 @@ const panelStyle: React.CSSProperties = {
   border: `2px solid ${colors.orange}`,
   boxShadow: `0 0 32px ${colors.orangeGlow}, 0 4px 24px rgba(0, 0, 0, 0.5)`,
   padding: 24,
-  minWidth: 560,
-  maxWidth: 680,
+  width: 'min(680px, calc(100vw - 32px))',
+  maxHeight: 'calc(100vh - 32px)',
+  overflow: 'auto',
   color: colors.orange,
-  fontFamily: '"Courier New", monospace'
+  fontFamily: type.mono
 }
 
 const headerRowStyle: React.CSSProperties = {

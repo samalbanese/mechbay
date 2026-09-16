@@ -187,6 +187,7 @@ function RuntimeSection({ companion }: { companion: Companion }): React.JSX.Elem
     <div style={runtimeSectionStyle}>
       <div style={runtimeHeaderStyle}>RUNTIME</div>
       <select
+        aria-label="Agent runtime"
         style={runtimeSelectStyle}
         value={runtime}
         disabled={pending}
@@ -200,6 +201,7 @@ function RuntimeSection({ companion }: { companion: Companion }): React.JSX.Elem
         ))}
       </select>
       <input
+        aria-label="Model override"
         style={modelInputStyle}
         type="text"
         placeholder="model override (optional)"

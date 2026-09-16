@@ -16,9 +16,12 @@ import { HudFooter } from './components/HudFooter'
 import { SettingsModal } from './components/SettingsModal'
 import { BootSplash } from './components/BootSplash'
 import { CrtOverlay } from './components/CrtOverlay'
+import { CrewRoster } from './components/CrewRoster'
+import { MissionBoard } from './components/MissionBoard'
+import { fleetTelemetry, isActiveMission, STATUS_LABELS } from './operations'
 import { colors, type } from './theme'
 
-type SidebarTab = 'log' | 'files' | 'journal'
+type SidebarTab = 'operations' | 'log' | 'files' | 'journal'
 
 function App(): React.JSX.Element {
   const [state, setState] = useState<AppState | null>(null)
@@ -29,7 +32,10 @@ function App(): React.JSX.Element {
   } | null>(null)
   const [recoveryZombies, setRecoveryZombies] = useState<Deployment[] | null>(null)
   const [browsingFacilityId, setBrowsingFacilityId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<SidebarTab>('log')
+  const [activeTab, setActiveTab] = useState<SidebarTab>('operations')
+  const [demo, setDemo] = useState(false)
+  const [deploying, setDeploying] = useState(false)
+  const [deployError, setDeployError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [bulkImportOpen, setBulkImportOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -51,8 +57,13 @@ function App(): React.JSX.Element {
         previousStateRef.current = initialState
         latestStateRef.current = initialState
         setState(initialState)
+        setSelectedCompanionId(initialState.companions[0]?.id ?? null)
       })
       .catch((e) => setError(String(e)))
+    void window.mechbay
+      .getAppMode()
+      .then((mode) => setDemo(mode.demo))
+      .catch(() => {})
     const offState = window.mechbay.onStateChange((nextState) => {
       const previousState = previousStateRef.current
       if (previousState) {
@@ -131,6 +142,7 @@ function App(): React.JSX.Element {
         const game = gameRef.current
         if (!game) return
         const scale = computeRenderScale()
+        game.scale.setParentSize(parent.clientWidth, parent.clientHeight)
         game.scale.setGameSize(Math.round(BASE_W * scale), Math.round(BASE_H * scale))
       })
     })
@@ -140,13 +152,14 @@ function App(): React.JSX.Element {
     ;(window as unknown as Record<string, unknown>).__mechbayScene = scene
 
     const offDrop = (payload: { companionId: string; facilityId: string }): void => {
+      setDeployError(null)
       setPendingDeploy(payload)
     }
     const offSelect = (payload: { companionId: string | null }): void => {
       setSelectedCompanionId(payload.companionId)
-      // Switch to Journal tab when a companion is selected
+      // Keep mission preparation within reach; open the Journal explicitly.
       if (payload.companionId) {
-        setActiveTab('journal')
+        setActiveTab('operations')
       }
     }
     const offFacility = (payload: { facilityId: string }): void => {
@@ -239,6 +252,22 @@ function App(): React.JSX.Element {
     if (state) sceneRef.current?.setState(state)
   }, [state])
 
+  // Hooks stay above conditional returns, including boot errors.
+  const deploymentInfo = useMemo(() => {
+    if (!state) return []
+    const companionMap = new Map(state.companions.map((c) => [c.id, c]))
+    return state.deployments.map((d) => ({
+      id: d.id,
+      companionName: companionMap.get(d.companionId)?.name ?? 'Unknown',
+      startedAt: d.startedAt
+    }))
+  }, [state])
+
+  const selectCompanion = (id: string): void => {
+    setSelectedCompanionId(id)
+    sceneRef.current?.setSelectedCompanion(id)
+  }
+
   if (error) {
     return (
       <div style={shellStyle}>
@@ -273,49 +302,130 @@ function App(): React.JSX.Element {
     (recoveryZombies && recoveryZombies.length > 0)
   )
 
-  // Build deployment info for log pane separators using Map for O(1) companion lookup
-  const deploymentInfo = useMemo(() => {
-    if (!state) return []
-    const companionMap = new Map(state.companions.map((c) => [c.id, c]))
-    return state.deployments.map((d) => ({
-      id: d.id,
-      companionName: companionMap.get(d.companionId)?.name ?? 'Unknown',
-      startedAt: d.startedAt
-    }))
-  }, [state])
+  const telemetry = state && fleetTelemetry(state)
+  const activeMission = state?.deployments.find(isActiveMission)
+  const activeMech = state?.companions.find((c) => c.id === activeMission?.companionId)
 
   return (
-    <div style={shellStyle}>
+    <div className="command-shell" data-reduce-motion={state?.settings.reduceMotion ?? false}>
       <HudHeader
         state={state}
+        demo={demo}
         onBulkImportClick={() => setBulkImportOpen(true)}
         onSettingsClick={() => setSettingsOpen(true)}
       />
 
-      <div style={mainStyle}>
-        <div ref={canvasParentRef} style={canvasParentStyle} />
+      <main className="command-main">
+        <section className="bay-sector" aria-label="Command bay">
+          <div className="bay-title-row">
+            <div>
+              <div className="eyebrow">
+                TACTICAL OVERVIEW <span>/ SECTOR 01</span>
+              </div>
+              <h2>
+                A place for your
+                <br className="compact-break" /> entire crew.
+              </h2>
+            </div>
+            <div className="telemetry-strip" aria-label="Fleet telemetry">
+              <div>
+                <strong>{String(telemetry?.ready ?? 0).padStart(2, '0')}</strong>
+                <span>READY</span>
+              </div>
+              <div>
+                <strong className="amber-value">
+                  {String(telemetry?.active ?? 0).padStart(2, '0')}
+                </strong>
+                <span>ACTIVE</span>
+              </div>
+              <div>
+                <strong>{String(telemetry?.completed ?? 0).padStart(2, '0')}</strong>
+                <span>COMPLETE</span>
+              </div>
+              <div>
+                <strong>{String(telemetry?.queued ?? 0).padStart(2, '0')}</strong>
+                <span>QUEUED</span>
+              </div>
+            </div>
+          </div>
+          <div className="bay-viewport">
+            <div className="map-corner map-top-left">
+              <span className="status-dot" /> ISOMETRIC FIELD <span>16 × 16</span>
+            </div>
+            <div className="map-corner map-top-right">
+              {telemetry?.linked ?? 0} PROJECTS CONNECTED
+            </div>
+            <div
+              ref={canvasParentRef}
+              className="bay-canvas"
+              aria-label="Interactive isometric bay. Use the crew and project controls for keyboard access."
+            />
+            <div className="map-readout">
+              <span className="readout-cross" aria-hidden="true">
+                ⌖
+              </span>
+              <div>
+                <span className="eyebrow">
+                  {activeMission ? 'MISSION IN PROGRESS' : 'COMMAND LINK ESTABLISHED'}
+                </span>
+                <strong>
+                  {activeMission
+                    ? `${activeMech?.name ?? 'Mech'} / ${STATUS_LABELS[activeMission.status]}`
+                    : 'Awaiting your orders, Commander.'}
+                </strong>
+                <p>
+                  {activeMission
+                    ? activeMission.taskPrompt
+                    : 'Drag a mech to a facility, or prepare a mission from the command panel.'}
+                </p>
+              </div>
+              {activeMission && (
+                <button className="secondary-action" onClick={() => setActiveTab('log')}>
+                  Live log ↗
+                </button>
+              )}
+            </div>
+            <div className="map-scale" aria-hidden="true">
+              <i />
+              <span>BAY 01 / LOCAL</span>
+            </div>
+          </div>
+          <CrewRoster
+            state={state}
+            selectedId={selectedCompanionId}
+            onSelect={(id) => {
+              selectCompanion(id)
+              setActiveTab('operations')
+            }}
+          />
+        </section>
 
         {/* Sidebar */}
-        <div style={sidebarStyle}>
-          <CompanionPanel
-            companion={selectedCompanion}
-            deployments={state?.deployments ?? []}
-            facilities={state?.facilities ?? []}
-          />
+        <aside className="command-sidebar" aria-label="Mission control">
+          <div className="sidebar-heading">
+            <div>
+              <span className="eyebrow">COMMAND CHANNEL</span>
+              <h2>Mission control</h2>
+            </div>
+            <span className="channel-icon" aria-hidden="true">
+              ⌁
+            </span>
+          </div>
 
-          <div
-            style={{
-              ...sidebarPanelStyle,
-              flex: 1,
-              minHeight: 0,
-              display: 'flex',
-              flexDirection: 'column'
-            }}
-          >
-            <div style={tabRowStyle}>
+          <div className="sidebar-content">
+            <div className="command-tabs" aria-label="Command views">
               <button
                 type="button"
-                style={activeTab === 'log' ? tabActiveStyle : tabStyle}
+                className={activeTab === 'operations' ? 'active' : ''}
+                aria-pressed={activeTab === 'operations'}
+                onClick={() => setActiveTab('operations')}
+              >
+                OPERATIONS
+              </button>
+              <button
+                type="button"
+                className={activeTab === 'log' ? 'active' : ''}
+                aria-pressed={activeTab === 'log'}
                 onClick={() => setActiveTab('log')}
               >
                 LIVE LOG
@@ -324,14 +434,15 @@ function App(): React.JSX.Element {
                 <>
                   <button
                     type="button"
-                    style={activeTab === 'files' ? tabActiveStyle : tabStyle}
+                    className={activeTab === 'files' ? 'active' : ''}
+                    aria-pressed={activeTab === 'files'}
                     onClick={() => setActiveTab('files')}
                   >
                     FILES
                   </button>
                   <button
                     type="button"
-                    style={tabCloseStyle}
+                    className="tab-close"
                     onClick={() => {
                       setBrowsingFacilityId(null)
                       setActiveTab('log')
@@ -344,12 +455,32 @@ function App(): React.JSX.Element {
               )}
               <button
                 type="button"
-                style={activeTab === 'journal' ? tabActiveStyle : tabStyle}
+                className={activeTab === 'journal' ? 'active' : ''}
+                aria-pressed={activeTab === 'journal'}
                 onClick={() => setActiveTab('journal')}
               >
                 JOURNAL
               </button>
             </div>
+
+            {activeTab === 'operations' && state && (
+              <MissionBoard
+                state={state}
+                selectedId={selectedCompanionId}
+                demo={demo}
+                onSelect={selectCompanion}
+                onDeploy={(companionId, facilityId) => {
+                  setDeployError(null)
+                  setPendingDeploy({ companionId, facilityId })
+                }}
+                onReview={(id) =>
+                  setDebriefQueue((queue) => [id, ...queue.filter((item) => item !== id)])
+                }
+                onFacility={(facilityId) => bus.emit('facilityClicked', { facilityId })}
+                onJournal={() => setActiveTab('journal')}
+                onLog={() => setActiveTab('log')}
+              />
+            )}
 
             {activeTab === 'log' && (
               <LogPane logs={state?.logChunks ?? []} deployments={deploymentInfo} />
@@ -365,10 +496,19 @@ function App(): React.JSX.Element {
                 return <FileBrowser facilityPath={facility.path} facilityName={facility.name} />
               })()}
 
-            {activeTab === 'journal' && <JournalTab companionId={selectedCompanionId} />}
+            {activeTab === 'journal' && (
+              <div className="journal-scroll">
+                <CompanionPanel
+                  companion={selectedCompanion}
+                  deployments={state?.deployments ?? []}
+                  facilities={state?.facilities ?? []}
+                />
+                <JournalTab companionId={selectedCompanionId} />
+              </div>
+            )}
           </div>
-        </div>
-      </div>
+        </aside>
+      </main>
 
       <HudFooter />
 
@@ -410,8 +550,14 @@ function App(): React.JSX.Element {
             <DeployModal
               companion={companion}
               facility={facility}
-              onCancel={() => setPendingDeploy(null)}
+              isLoading={deploying}
+              error={deployError}
+              onCancel={() => {
+                if (!deploying) setPendingDeploy(null)
+              }}
               onDeploy={(prompt, quickPrompt) => {
+                setDeploying(true)
+                setDeployError(null)
                 window.mechbay
                   .deployStart({
                     companionId: pendingDeploy.companionId,
@@ -419,10 +565,12 @@ function App(): React.JSX.Element {
                     taskPrompt: prompt,
                     quickPromptUsed: quickPrompt
                   })
-                  .catch((e) =>
-                    alert(`Deploy failed: ${e instanceof Error ? e.message : String(e)}`)
-                  )
-                setPendingDeploy(null)
+                  .then(() => {
+                    setPendingDeploy(null)
+                    setActiveTab('log')
+                  })
+                  .catch((e) => setDeployError(e instanceof Error ? e.message : String(e)))
+                  .finally(() => setDeploying(false))
               }}
             />
           )
@@ -447,75 +595,6 @@ const shellStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   fontSize: 14
-}
-
-const mainStyle: React.CSSProperties = {
-  flex: 1,
-  display: 'flex',
-  minHeight: 0
-}
-
-const canvasParentStyle: React.CSSProperties = {
-  flex: 1,
-  background: colors.bgPanelDark,
-  overflow: 'hidden',
-  minWidth: 0
-}
-
-const sidebarStyle: React.CSSProperties = {
-  width: 360,
-  borderLeft: `1px solid ${colors.borderHud}`,
-  padding: 12,
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 12,
-  minHeight: 0,
-  flexShrink: 0
-}
-
-const sidebarPanelStyle: React.CSSProperties = {
-  background: colors.bgHud,
-  border: `1px solid ${colors.borderHud}`,
-  padding: 10,
-  fontSize: 12
-}
-
-const tabRowStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 2,
-  marginBottom: 8,
-  borderBottom: `1px solid ${colors.borderHud}`
-}
-
-const tabStyle: React.CSSProperties = {
-  background: 'transparent',
-  border: 0,
-  borderBottom: '2px solid transparent',
-  color: colors.textDark,
-  fontSize: 10,
-  letterSpacing: type.labelTracking,
-  padding: '4px 10px',
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-  fontWeight: 'bold'
-}
-
-const tabActiveStyle: React.CSSProperties = {
-  ...tabStyle,
-  color: colors.amber,
-  borderBottom: `2px solid ${colors.amber}`
-}
-
-const tabCloseStyle: React.CSSProperties = {
-  marginLeft: 'auto',
-  background: 'transparent',
-  border: 0,
-  color: colors.textDark,
-  fontSize: 14,
-  padding: '2px 8px',
-  cursor: 'pointer',
-  fontFamily: 'inherit'
 }
 
 export default App

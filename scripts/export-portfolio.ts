@@ -1,0 +1,134 @@
+/** Encode verified captures. Pass --portfolio <directory> to refresh a portfolio checkout. */
+import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { spawnSync } from 'node:child_process'
+
+const root = resolve(import.meta.dirname, '..')
+const output = join(root, 'artifacts', 'portfolio')
+const recording = JSON.parse(readFileSync(join(output, 'recording.json'), 'utf8')) as {
+  frames: string
+  count: number
+  durationMs: number
+}
+const portfolioArgument = process.argv.indexOf('--portfolio')
+const portfolio = portfolioArgument >= 0 ? resolve(process.argv[portfolioArgument + 1]) : null
+if (portfolio && !existsSync(join(portfolio, 'src', 'pages', 'portfolio.astro')))
+  throw new Error('Expected a SamAlbaneseConsulting checkout')
+if (!existsSync(join(output, 'verification.json')))
+  throw new Error('Run the capture verification before exporting')
+const ffmpeg = (args: string[]): void => {
+  const result = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args], {
+    encoding: 'utf8',
+    windowsHide: true
+  })
+  if (result.status !== 0)
+    throw new Error(result.stderr || result.error?.message || 'ffmpeg failed')
+}
+const media = portfolio && join(portfolio, 'public', 'media')
+if (media) mkdirSync(media, { recursive: true })
+for (const name of ['command', 'mission', 'debrief']) {
+  const target = join(root, 'site', `screenshot-${name}.webp`)
+  ffmpeg(['-i', join(output, `mechbay-${name}.png`), '-quality', '90', target])
+  if (media) copyFileSync(target, join(media, `mechbay-${name}.webp`))
+}
+copyFileSync(join(output, 'mechbay-command.png'), join(root, 'docs', 'screenshot-bay.png'))
+copyFileSync(join(output, 'mechbay-command.png'), join(root, 'site', 'screenshot-bay.png'))
+if (media)
+  copyFileSync(join(root, 'site', 'screenshot-command.webp'), join(media, 'mechbay-poster.webp'))
+
+// Accelerate the captured frames to a concise 24-second walkthrough.
+const inputFps = recording.count / 24
+const input = ['-framerate', String(inputFps), '-i', join(recording.frames, 'frame-%05d.jpg')]
+const filter = 'fps=12,scale=1280:800:flags=lanczos'
+const mp4 = join(root, 'site', 'demo.mp4')
+const webm = join(root, 'site', 'demo.webm')
+const passlog = join(output, 'encode-pass')
+ffmpeg([
+  ...input,
+  '-vf',
+  filter,
+  '-c:v',
+  'libx264',
+  '-b:v',
+  '190k',
+  '-pass',
+  '1',
+  '-passlogfile',
+  passlog,
+  '-preset',
+  'slow',
+  '-an',
+  '-f',
+  'null',
+  process.platform === 'win32' ? 'NUL' : '/dev/null'
+])
+ffmpeg([
+  ...input,
+  '-vf',
+  filter,
+  '-c:v',
+  'libx264',
+  '-b:v',
+  '190k',
+  '-pass',
+  '2',
+  '-passlogfile',
+  passlog,
+  '-preset',
+  'slow',
+  '-pix_fmt',
+  'yuv420p',
+  '-movflags',
+  '+faststart',
+  '-an',
+  mp4
+])
+ffmpeg([...input, '-vf', filter, '-c:v', 'libvpx-vp9', '-b:v', '180k', '-crf', '38', '-an', webm])
+for (const [file, extension] of [
+  [mp4, 'mp4'],
+  [webm, 'webm']
+]) {
+  if (statSync(file).size > 700 * 1024)
+    throw new Error(`${extension} exceeds the portfolio media budget`)
+  if (media) copyFileSync(file, join(media, `mechbay-demo.${extension}`))
+}
+const gif = join(root, 'docs', 'demo.gif')
+ffmpeg([
+  ...input,
+  '-filter_complex',
+  'fps=8,scale=1000:625:flags=lanczos,split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4',
+  '-loop',
+  '0',
+  gif
+])
+if (statSync(gif).size > 15 * 1024 * 1024) throw new Error('GIF exceeds 15 MiB')
+copyFileSync(gif, join(root, 'site', 'demo.gif'))
+const fonts = join(root, 'site', 'fonts')
+mkdirSync(fonts, { recursive: true })
+for (const [family, weight] of [
+  ['barlow-condensed', '600'],
+  ['barlow', '400'],
+  ['ibm-plex-mono', '400']
+]) {
+  const name = `${family}-latin-${weight}-normal.woff2`
+  copyFileSync(join(root, 'node_modules', '@fontsource', family, 'files', name), join(fonts, name))
+  copyFileSync(
+    join(root, 'node_modules', '@fontsource', family, 'LICENSE'),
+    join(fonts, `${family}-LICENSE.txt`)
+  )
+}
+const manifest = {
+  capturedAt: JSON.parse(readFileSync(join(output, 'verification.json'), 'utf8')).capturedAt,
+  mode: 'Isolated simulation; real file edits and git-backed debrief',
+  sourceSize: '1600x1000',
+  videoDuration: '24 seconds; accelerated playback',
+  screenshots: ['command', 'mission', 'debrief'],
+  videoBytes: { mp4: statSync(mp4).size, webm: statSync(webm).size }
+}
+writeFileSync(join(root, 'site', 'capture-manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
+if (media)
+  writeFileSync(
+    join(media, 'mechbay-capture-manifest.json'),
+    JSON.stringify(manifest, null, 2) + '\n'
+  )
+console.log(JSON.stringify(manifest, null, 2))
