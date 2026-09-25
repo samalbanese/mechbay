@@ -34,9 +34,19 @@ export function SettingsModal({
   const [alertsEnabled, setAlertsEnabled] = useState(missionAlerts)
   const closeRef = useRef<HTMLButtonElement>(null)
 
-  // Keep the toggle in sync if the persisted value changes underneath us.
-  useEffect(() => setMotionReduced(reduceMotion), [reduceMotion])
-  useEffect(() => setAlertsEnabled(missionAlerts), [missionAlerts])
+  // Keep the toggles in sync if the persisted value changes underneath us.
+  // Adjusted during render (React's "store the previous prop" pattern)
+  // rather than in an effect, which would render the stale value first.
+  const [syncedReduceMotion, setSyncedReduceMotion] = useState(reduceMotion)
+  if (reduceMotion !== syncedReduceMotion) {
+    setSyncedReduceMotion(reduceMotion)
+    setMotionReduced(reduceMotion)
+  }
+  const [syncedMissionAlerts, setSyncedMissionAlerts] = useState(missionAlerts)
+  if (missionAlerts !== syncedMissionAlerts) {
+    setSyncedMissionAlerts(missionAlerts)
+    setAlertsEnabled(missionAlerts)
+  }
 
   const toggleMotion = async (): Promise<void> => {
     const next = !motionReduced
@@ -73,13 +83,19 @@ export function SettingsModal({
   }
 
   useEffect(() => {
-    void refreshStatus()
+    let cancelled = false
+    void window.mechbay.secretsStatus().then((status) => {
+      if (!cancelled) setSecretStatus(status)
+    })
     closeRef.current?.focus()
     const onKey = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') onClose()
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    return () => {
+      cancelled = true
+      window.removeEventListener('keydown', onKey)
+    }
   }, [onClose])
 
   const resetField = async (): Promise<void> => {
