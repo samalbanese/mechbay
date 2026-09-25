@@ -3,12 +3,12 @@ import type { BrowserWindow } from 'electron'
 import { IPC } from '../../src/shared/ipc-channels'
 import { StateManager, type StoreLike } from '../../src/main/state-manager'
 
-const registeredHandlers = new Map<string, (event: unknown, payload: any) => unknown>()
+const registeredHandlers = new Map<string, (event: unknown, payload: unknown) => unknown>()
 
 vi.mock('electron', () => ({
   app: { getPath: vi.fn() },
   ipcMain: {
-    handle: vi.fn((channel: string, handler: (event: unknown, payload: any) => unknown) => {
+    handle: vi.fn((channel: string, handler: (event: unknown, payload: unknown) => unknown) => {
       registeredHandlers.set(channel, handler)
     })
   },

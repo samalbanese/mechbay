@@ -2,14 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BrowserWindow } from 'electron'
 import { IPC } from '../../src/shared/ipc-channels'
 import { StateManager, type StoreLike } from '../../src/main/state-manager'
-import type { AgentFamily, Deployment } from '../../src/shared/types'
+import type { AgentFamily, Deployment, SimpleActionResult } from '../../src/shared/types'
 import type { Runner } from '../../src/main/runners/types'
 
-const handlers = new Map<string, (event: unknown, payload: any) => unknown>()
+const handlers = new Map<string, (event: unknown, payload: unknown) => unknown>()
 
 vi.mock('electron', () => ({
   ipcMain: {
-    handle: vi.fn((channel: string, handler: (event: unknown, payload: any) => unknown) =>
+    handle: vi.fn((channel: string, handler: (event: unknown, payload: unknown) => unknown) =>
       handlers.set(channel, handler)
     )
   },
@@ -32,7 +32,7 @@ const store = (): StoreLike => {
 
 function setup(): {
   state: StateManager
-  remove: (payload: { facilityId: string }) => Promise<any>
+  remove: (payload: { facilityId: string }) => Promise<SimpleActionResult>
 } {
   const state = new StateManager(store(), '/tmp/ipc-facility-remove')
   const runner: Runner = { isAvailable: async () => true, spawn: vi.fn() }
@@ -51,7 +51,10 @@ function setup(): {
   })
   const handler = handlers.get(IPC.FACILITY_REMOVE)
   if (!handler) throw new Error('FACILITY_REMOVE handler missing')
-  return { state, remove: (payload) => Promise.resolve(handler({}, payload)) }
+  return {
+    state,
+    remove: (payload) => Promise.resolve(handler({}, payload) as SimpleActionResult)
+  }
 }
 
 describe('IPC.FACILITY_REMOVE', () => {
