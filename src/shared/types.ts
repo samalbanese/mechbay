@@ -235,6 +235,13 @@ export interface AppState {
     reduceMotion?: boolean
     /** Static scanlines and edge vignette. Defaults on when unset. */
     crtOverlay?: boolean
+    /**
+     * Desktop notifications + taskbar flash when a deployment finishes,
+     * fails, or needs input while the window is unfocused/minimized.
+     * Defaults ON when unset, like `crtOverlay` — optional so pre-existing
+     * persisted state stays valid without a schema bump.
+     */
+    missionAlerts?: boolean
   }
   lastScanAt?: number
 }

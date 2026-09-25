@@ -21,7 +21,11 @@ import { registerIpc } from '../../src/main/ipc'
 
 function setup(): {
   state: StateManager
-  update: (payload: { reduceMotion?: boolean; crtOverlay?: boolean }) => Promise<unknown>
+  update: (payload: {
+    reduceMotion?: boolean
+    crtOverlay?: boolean
+    missionAlerts?: boolean
+  }) => Promise<unknown>
 } {
   const data: Record<string, unknown> = {}
   const store: StoreLike = {
@@ -74,5 +78,23 @@ describe('IPC.SETTINGS_UPDATE', () => {
     await update({ reduceMotion: 'yes', crtOverlay: 0 } as never)
     expect(state.getState().settings.reduceMotion).toBe(false)
     expect(state.getState().settings.crtOverlay).toBeUndefined()
+  })
+
+  it('persists missionAlerts while preserving other settings', async () => {
+    const { state, update } = setup()
+    const projectsDir = state.getState().settings.projectsDir
+
+    expect(await update({ missionAlerts: false })).toEqual({ ok: true })
+    expect(state.getState().settings).toMatchObject({ projectsDir, missionAlerts: false })
+
+    expect(await update({ missionAlerts: true })).toEqual({ ok: true })
+    expect(state.getState().settings.missionAlerts).toBe(true)
+  })
+
+  it('ignores a non-boolean missionAlerts value', async () => {
+    const { state, update } = setup()
+
+    await update({ missionAlerts: 'yes' } as never)
+    expect(state.getState().settings.missionAlerts).toBeUndefined()
   })
 })

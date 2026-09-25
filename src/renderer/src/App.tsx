@@ -523,6 +523,7 @@ function App(): React.JSX.Element {
           companions={state.companions}
           reduceMotion={state.settings.reduceMotion ?? false}
           crtOverlay={state.settings.crtOverlay ?? true}
+          missionAlerts={state.settings.missionAlerts ?? true}
           onClose={() => setSettingsOpen(false)}
         />
       )}

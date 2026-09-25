@@ -185,13 +185,16 @@ export function registerIpc(opts: IpcDeps): void {
 
   ipcMain.handle(
     IPC.SETTINGS_UPDATE,
-    (_e, patch: { reduceMotion?: boolean; crtOverlay?: boolean }) => {
+    (_e, patch: { reduceMotion?: boolean; crtOverlay?: boolean; missionAlerts?: boolean }) => {
       state.updateState((prev) => ({
         ...prev,
         settings: {
           ...prev.settings,
           ...(typeof patch.reduceMotion === 'boolean' ? { reduceMotion: patch.reduceMotion } : {}),
           ...(typeof patch.crtOverlay === 'boolean' ? { crtOverlay: patch.crtOverlay } : {}),
+          ...(typeof patch.missionAlerts === 'boolean'
+            ? { missionAlerts: patch.missionAlerts }
+            : {})
         }
       }))
       return { ok: true }

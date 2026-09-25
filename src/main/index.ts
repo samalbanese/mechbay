@@ -13,6 +13,7 @@ import { GeminiRunner } from './runners/gemini'
 import { HermesRunner } from './runners/hermes'
 import { SimRunner } from './runners/sim'
 import { registerIpc } from './ipc'
+import { MissionAlerts } from './mission-alerts'
 import { runCliAvailabilityCheck } from './cli-check'
 import { IPC } from '../shared/ipc-channels'
 import type { Runner } from './runners/types'
@@ -170,6 +171,16 @@ app.whenReady().then(() => {
       push()
     }
   }
+
+  // Desktop mission alerts: notifications + taskbar flash/progress when a
+  // deployment finishes, fails, or needs input while unfocused. Must be
+  // constructed AFTER the zombie sweep above: the sweep flips interrupted
+  // missions to 'failed', and the window isn't shown yet (so it reads as
+  // unfocused), which would fire a "mech is down" OS notification for
+  // every crash-recovered mission on top of the in-app recovery modal.
+  // Wired for demo mode too (it's the showcase); capture scripts keep the
+  // window focused so they never trigger a real notification.
+  new MissionAlerts({ win, state })
 
   // Probe CLI availability in the background — don't block window show.
   // A missing CLI surfaces as a NOT DEPLOYABLE overlay once the state

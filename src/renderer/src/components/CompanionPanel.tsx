@@ -8,6 +8,7 @@ import type {
 } from '../../../shared/types'
 import { colors, type } from '../theme'
 import { RUNTIME_OPTIONS } from '../runtime-options'
+import { computeServiceRecord } from '../service-record'
 
 interface CompanionPanelProps {
   companion: Companion | null
@@ -57,6 +58,13 @@ export function CompanionPanel({
       }
     })
   }, [companion, deployments, facilityMap])
+
+  // Service record: pure derivation from this companion's own deployment
+  // slice — recomputed whenever deployments changes, nothing persisted.
+  const record = useMemo(() => {
+    if (!companion) return null
+    return computeServiceRecord(companion.id, deployments)
+  }, [companion, deployments])
 
   // Calculate last active time
   const lastActive = useMemo((): string => {
@@ -119,6 +127,9 @@ export function CompanionPanel({
 
       {/* Runtime reassignment */}
       <RuntimeSection key={companion.id} companion={companion} />
+
+      {/* Service record */}
+      {record && <ServiceRecordSection record={record} />}
 
       {/* Last Active */}
       <div style={lastActiveStyle}>{lastActive}</div>
@@ -222,6 +233,74 @@ function RuntimeSection({ companion }: { companion: Companion }): React.JSX.Elem
       </div>
     </div>
   )
+}
+
+function ServiceRecordSection({
+  record
+}: {
+  record: ReturnType<typeof computeServiceRecord>
+}): React.JSX.Element {
+  const { rank } = record
+  return (
+    <div style={serviceRecordSectionStyle}>
+      <div style={historyHeaderStyle}>SERVICE RECORD</div>
+      <div style={rankRowStyle}>
+        <span style={rankTitleStyle}>{rank.title}</span>
+        {rank.nextTitle && (
+          <span style={rankNextStyle}>
+            {Math.round(rank.progress * 100)}% to {rank.nextTitle}
+          </span>
+        )}
+      </div>
+      <div
+        style={xpTrackStyle}
+        role="progressbar"
+        aria-label={
+          rank.nextTitle
+            ? `${rank.title}, ${Math.round(rank.progress * 100)}% to ${rank.nextTitle}`
+            : `${rank.title}, max rank`
+        }
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(rank.progress * 100)}
+      >
+        <div style={{ ...xpFillStyle, width: `${rank.progress * 100}%` }} />
+      </div>
+      <div style={serviceStatGridStyle}>
+        <ServiceStat
+          label="SORTIES"
+          value={record.sorties === 0 ? 'None yet' : String(record.sorties)}
+        />
+        <ServiceStat
+          label="SUCCESS RATE"
+          value={record.successRate === null ? '·' : `${Math.round(record.successRate * 100)}%`}
+        />
+        <ServiceStat label="LINES CHANGED" value={record.linesChanged.toLocaleString()} />
+        <ServiceStat label="FILES TOUCHED" value={record.filesTouched.toLocaleString()} />
+        <ServiceStat label="TIME IN FIELD" value={formatDuration(record.timeInFieldMs)} />
+      </div>
+      <div style={serviceFootnoteStyle}>Reflects the last 200 missions only.</div>
+    </div>
+  )
+}
+
+function ServiceStat({ label, value }: { label: string; value: string }): React.JSX.Element {
+  return (
+    <div style={serviceStatStyle}>
+      <span style={serviceStatLabelStyle}>{label}</span>
+      <span style={serviceStatValueStyle}>{value}</span>
+    </div>
+  )
+}
+
+/** e.g. 5,400,000ms -> "1h 30m", 45,000ms -> "45s" */
+function formatDuration(ms: number): string {
+  if (ms <= 0) return '0m'
+  const totalMinutes = Math.floor(ms / 60000)
+  if (totalMinutes < 1) return `${Math.round(ms / 1000)}s`
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return hours > 0 ? `${hours}h ${String(minutes).padStart(2, '0')}m` : `${minutes}m`
 }
 
 function getStatusConfig(status: DeploymentStatus): { color: string; pulse?: boolean } {
@@ -476,5 +555,77 @@ const runtimeHintStyle: React.CSSProperties = {
   color: colors.textMuted,
   fontSize: 10,
   lineHeight: 1.4,
+  fontStyle: 'italic'
+}
+
+const serviceRecordSectionStyle: React.CSSProperties = {
+  borderTop: `1px solid ${colors.borderHud}`,
+  paddingTop: 12,
+  marginBottom: 12
+}
+
+const rankRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'baseline',
+  justifyContent: 'space-between',
+  gap: 8,
+  marginBottom: 6
+}
+
+const rankTitleStyle: React.CSSProperties = {
+  color: colors.amber,
+  fontSize: 13,
+  fontWeight: 'bold',
+  letterSpacing: '0.04em',
+  textTransform: 'uppercase'
+}
+
+const rankNextStyle: React.CSSProperties = {
+  color: colors.textMuted,
+  fontSize: 10
+}
+
+const xpTrackStyle: React.CSSProperties = {
+  height: 4,
+  background: colors.bgPanelDark,
+  border: `1px solid ${colors.borderHud}`,
+  marginBottom: 10,
+  overflow: 'hidden'
+}
+
+const xpFillStyle: React.CSSProperties = {
+  height: '100%',
+  background: '#efc36d',
+  transition: 'width 0.3s ease-out'
+}
+
+const serviceStatGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '1fr 1fr',
+  gap: 8
+}
+
+const serviceStatStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 2
+}
+
+const serviceStatLabelStyle: React.CSSProperties = {
+  fontSize: 9,
+  color: colors.textMuted,
+  letterSpacing: type.labelTracking
+}
+
+const serviceStatValueStyle: React.CSSProperties = {
+  fontSize: 12,
+  color: colors.textPrimary,
+  fontWeight: 'bold'
+}
+
+const serviceFootnoteStyle: React.CSSProperties = {
+  marginTop: 8,
+  fontSize: 9,
+  color: colors.textMuted,
   fontStyle: 'italic'
 }

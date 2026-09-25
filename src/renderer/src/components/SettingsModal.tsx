@@ -7,6 +7,7 @@ interface SettingsModalProps {
   companions: Companion[]
   reduceMotion: boolean
   crtOverlay: boolean
+  missionAlerts: boolean
   onClose: () => void
 }
 
@@ -24,15 +25,18 @@ export function SettingsModal({
   companions,
   reduceMotion,
   crtOverlay,
+  missionAlerts,
   onClose
 }: SettingsModalProps): React.JSX.Element {
   const [secretStatus, setSecretStatus] = useState<SecretStatus>(EMPTY_STATUS)
   const [motionReduced, setMotionReduced] = useState(reduceMotion)
   const [crtEnabled, setCrtEnabled] = useState(crtOverlay)
+  const [alertsEnabled, setAlertsEnabled] = useState(missionAlerts)
   const closeRef = useRef<HTMLButtonElement>(null)
 
   // Keep the toggle in sync if the persisted value changes underneath us.
   useEffect(() => setMotionReduced(reduceMotion), [reduceMotion])
+  useEffect(() => setAlertsEnabled(missionAlerts), [missionAlerts])
 
   const toggleMotion = async (): Promise<void> => {
     const next = !motionReduced
@@ -50,6 +54,16 @@ export function SettingsModal({
     const result = await window.mechbay.updateSettings({ crtOverlay: next })
     if (!result.ok) {
       setCrtEnabled(!next)
+      alert(result.error)
+    }
+  }
+
+  const toggleAlerts = async (): Promise<void> => {
+    const next = !alertsEnabled
+    setAlertsEnabled(next)
+    const result = await window.mechbay.updateSettings({ missionAlerts: next })
+    if (!result.ok) {
+      setAlertsEnabled(!next)
       alert(result.error)
     }
   }
@@ -162,6 +176,26 @@ export function SettingsModal({
             onClick={() => void toggleCrt()}
           >
             {crtEnabled ? 'CRT: ON' : 'CRT: OFF'}
+          </button>
+        </section>
+
+        <section style={bayStyle}>
+          <div>
+            <div style={sectionLabelStyle}>MISSION ALERTS</div>
+            <div style={bayHintStyle}>
+              {alertsEnabled
+                ? 'On: a desktop notification and taskbar flash fire when a mech returns, needs input, or goes down while the window is unfocused.'
+                : 'Off: mission outcomes only show up inside MechBay.'}
+            </div>
+          </div>
+          <button
+            type="button"
+            style={toggleButtonStyle(!alertsEnabled)}
+            role="switch"
+            aria-checked={alertsEnabled}
+            onClick={() => void toggleAlerts()}
+          >
+            {alertsEnabled ? 'ALERTS: ON' : 'ALERTS: OFF'}
           </button>
         </section>
 

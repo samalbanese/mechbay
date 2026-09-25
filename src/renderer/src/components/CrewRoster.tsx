@@ -1,6 +1,19 @@
 import type { AppState } from '../../../shared/types'
 import { CREW, RUNTIME_NAMES } from '../crew'
 import { currentMission, STATUS_LABELS } from '../operations'
+import { computeServiceRecord } from '../service-record'
+
+/** Chevron insignia: nothing at Recruit, one glyph per tier above that. */
+function RankInsignia({ tier }: { tier: number }): React.JSX.Element | null {
+  if (tier === 0) return <span className="crew-rank-chevrons crew-rank-recruit">·</span>
+  return (
+    <span className="crew-rank-chevrons" aria-hidden="true">
+      {Array.from({ length: tier }, (_, i) => (
+        <i key={i} className="crew-chevron" />
+      ))}
+    </span>
+  )
+}
 
 export function CrewRoster({
   state,
@@ -23,6 +36,17 @@ export function CrewRoster({
         {state?.companions.map((companion, index) => {
           const profile = CREW[companion.mechClass]
           const mission = currentMission(companion.id, state.deployments)
+          const record = computeServiceRecord(companion.id, state.deployments)
+          const { rank } = record
+          const statLine =
+            record.sorties === 0
+              ? 'NO SORTIES YET'
+              : `${record.sorties} SORTIE${record.sorties === 1 ? '' : 'S'}${
+                  record.successRate === null ? '' : ` · ${Math.round(record.successRate * 100)}%`
+                }`
+          const progressLabel = rank.nextTitle
+            ? `${rank.title}, ${Math.round(rank.progress * 100)}% to ${rank.nextTitle}`
+            : `${rank.title}, max rank`
           return (
             <button
               key={companion.id}
@@ -39,6 +63,11 @@ export function CrewRoster({
               <span className="crew-runtime">
                 {RUNTIME_NAMES[companion.runtime ?? companion.family]}
               </span>
+              <span className="crew-rank-line">
+                <RankInsignia tier={rank.tier} />
+                <span className="crew-rank-title">{rank.title}</span>
+              </span>
+              <span className="crew-stat-line">{statLine}</span>
               <span
                 className={`crew-status ${mission ? 'engaged' : companion.cliAvailable ? 'ready' : 'offline'}`}
               >
@@ -48,6 +77,16 @@ export function CrewRoster({
                   : companion.cliAvailable
                     ? 'Ready'
                     : 'Setup needed'}
+              </span>
+              <span
+                className="crew-xp-track"
+                role="progressbar"
+                aria-label={progressLabel}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(rank.progress * 100)}
+              >
+                <span className="crew-xp-fill" style={{ width: `${rank.progress * 100}%` }} />
               </span>
             </button>
           )

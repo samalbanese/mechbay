@@ -1158,3 +1158,104 @@ input {
   animation: none !important;
   transition: none !important;
 }
+
+/* ── Pilot service record: rank line + XP bar on .crew-card ──────────
+   Sits below .crew-runtime in normal flow, above the absolutely
+   positioned .crew-status (bottom: 11px) and the XP track (bottom: 0).
+   Kept compact by design — .crew-card already clips overflow, so these
+   rows must never rely on more vertical room than the smallest
+   breakpoint (119px, the max-height:820px block) leaves free. */
+.crew-rank-line {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 3px;
+  font: 8px var(--mono);
+  letter-spacing: 0.04em;
+  color: #d7b064;
+  text-transform: uppercase;
+}
+.crew-rank-chevrons {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+.crew-rank-recruit {
+  color: #7c8468;
+  font-size: 9px;
+  line-height: 1;
+}
+.crew-chevron {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-top: 1px solid #efc36d;
+  border-right: 1px solid #efc36d;
+  transform: rotate(-45deg);
+}
+.crew-rank-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Shares the bottom row with .crew-status (right-aligned) instead of
+   flowing under the rank line: the status badge is absolutely pinned to
+   the card's bottom edge, so a flowing stat line collides with it on
+   shorter cards. */
+.crew-stat-line {
+  position: absolute;
+  right: 14px;
+  bottom: 11px;
+  display: block;
+  font: 7px var(--mono);
+  color: #8f9880;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.crew-xp-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  display: block;
+  background: #14180f;
+}
+.crew-xp-fill {
+  display: block;
+  height: 100%;
+  background: #efc36d;
+  transition: width 0.3s ease-out;
+}
+@media (min-width: 1550px) {
+  .crew-rank-line {
+    font-size: 9px;
+  }
+  .crew-stat-line {
+    font-size: 8px;
+  }
+}
+@media (min-width: 1550px) {
+  .crew-stat-line {
+    bottom: 14px;
+  }
+}
+@media (max-width: 1200px) {
+  .crew-rank-line {
+    margin-top: 2px;
+  }
+  .crew-stat-line {
+    right: 11px;
+  }
+}
+@media (max-height: 820px) and (min-width: 901px) {
+  .crew-rank-line {
+    margin-top: 1px;
+  }
+}
+@media (max-width: 900px) {
+  .crew-rank-line {
+    margin-top: 2px;
+  }
+}
