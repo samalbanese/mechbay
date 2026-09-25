@@ -17,6 +17,8 @@ export type BusEvents = {
   companionSelected: { companionId: string | null }
   /** Click on a tile with no facility / mech on it — triggers place-building flow. */
   emptyTileClicked: { tile: { x: number; y: number } }
+  /** RECENTER control — animate the bay camera back to its default zoom/pan. */
+  bayResetView: void
 }
 
 export const bus = mitt<BusEvents>()

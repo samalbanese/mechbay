@@ -351,6 +351,24 @@ function App(): React.JSX.Element {
           <div className="bay-viewport">
             <div className="map-corner map-top-left">
               <span className="status-dot" /> ISOMETRIC FIELD <span>16 × 16</span>
+              <button
+                type="button"
+                onClick={() => bus.emit('bayResetView')}
+                style={{
+                  pointerEvents: 'auto',
+                  marginLeft: 12,
+                  background: 'transparent',
+                  color: '#9ea991',
+                  border: '1px solid #404b36',
+                  padding: '2px 7px',
+                  font: '8px var(--mono)',
+                  letterSpacing: '0.06em',
+                  cursor: 'pointer'
+                }}
+                aria-label="Recenter the isometric field view"
+              >
+                RECENTER
+              </button>
             </div>
             <div className="map-corner map-top-right">
               {telemetry?.linked ?? 0} PROJECTS CONNECTED

@@ -5,6 +5,7 @@ import { colors, type } from '../theme'
 import { computeFacingFlipX, computeWalkBob, computeWalkFrame } from './bay-animation'
 import { canvasPointToPage } from './bay-layout'
 import { computeDeploymentActions } from './deployment-transitions'
+import { deckTile, conduitPath, clampZoom, clampPan, panBounds } from './bay-environment'
 
 import atlasUrl from '../../../../assets/mechs/atlas-poc.png?url'
 import marauderUrl from '../../../../assets/mechs/marauder-poc.png?url'
@@ -54,7 +55,11 @@ declare global {
  * same factor so the world framing stays put while gaining sharpness.
  */
 const BASE_VIEW_W = 1100
-const BASE_ZOOM = 0.52
+const BASE_VIEW_H = 640
+// Tuned up from 0.52 (Wave 7) so the diamond fills more of the frame — all
+// six seeded facilities (including the outermost, (13,3)/(3,13)/(13,13))
+// plus their labels still fit comfortably inside the default framing.
+const BASE_ZOOM = 0.6
 
 /**
  * Heavy-mech walk feel. Mechs move at a constant ground speed (world px per
@@ -167,6 +172,53 @@ export class BayScene extends Phaser.Scene {
     }
   >()
 
+  // --- Living-bay environment layer (Wave 8). Static per-layer Graphics
+  // built once (or rebuilt only when the entity set they depend on changes),
+  // never redrawn per-frame — see the "Performance" note in the Wave 8 spec.
+  private hangarPads = new Map<string, Phaser.GameObjects.Graphics>()
+  private facilityFoundations = new Map<string, Phaser.GameObjects.Graphics>()
+  private conduitsLayer: Phaser.GameObjects.Graphics | null = null
+  private conduitSignature = ''
+  private conduitPathPoints = new Map<string, Array<{ x: number; y: number }>>()
+  private conduitPackets = new Map<string, Phaser.GameObjects.Image>()
+  private conduitPacketTweens = new Map<string, Phaser.Tweens.Tween>()
+  private apronLayer: Phaser.GameObjects.Graphics | null = null
+  private rimLights: Phaser.GameObjects.Image[] = []
+  private rimLightTweens: Phaser.Tweens.Tween[] = []
+  private hazeEmitter: Phaser.GameObjects.Particles.ParticleEmitter | null = null
+  private searchlights: Phaser.GameObjects.Image[] = []
+  private searchlightTweens: Phaser.Tweens.Tween[] = []
+
+  // --- Deploy cinematics (Wave 8): target reticle, dashed route line, and
+  // working data-link, all keyed by companion id and torn down at the same
+  // lifecycle points as the effects above.
+  private walkReticles = new Map<
+    string,
+    { ring: Phaser.GameObjects.Graphics; tween: Phaser.Tweens.Tween | null }
+  >()
+  private routeLines = new Map<string, Phaser.GameObjects.Graphics>()
+  private dataLinks = new Map<
+    string,
+    {
+      facilityId: string
+      line: Phaser.GameObjects.Graphics
+      packets: Phaser.GameObjects.Image[]
+      tweens: Phaser.Tweens.Tween[]
+    }
+  >()
+  /** Short-lived, self-destroying GameObjects (shockwave rings, sparks) that
+   * still need tracking so a mid-animation shutdown doesn't leak them. */
+  private transientEffects = new Set<Phaser.GameObjects.GameObject>()
+
+  // --- Camera zoom/pan (Wave 8). User-driven, composed on top of the
+  // resolution-derived BASE_ZOOM * renderScale in applyCameraTransform().
+  private userZoom = 1
+  private userPan = { x: 0, y: 0 }
+  private isPanningCamera = false
+  private panPointerStart = { x: 0, y: 0 }
+  private panStart = { x: 0, y: 0 }
+  private handleResetView = (): void => this.resetView()
+
   constructor() {
     super('BayScene')
   }
@@ -216,6 +268,19 @@ export class BayScene extends Phaser.Scene {
       }
       for (const beacon of this.facilityBeacons.values()) beacon.destroy()
       this.facilityBeacons.clear()
+      // Ambient loops added in the living-bay pass: conduit packets, the rim
+      // light chase, and drifting haze/searchlights all stop under reduced
+      // motion — the conduits/apron themselves (static Graphics) stay put.
+      for (const id of [...this.conduitPacketTweens.keys()]) {
+        this.killTween(this.conduitPacketTweens, id)
+      }
+      for (const packet of this.conduitPackets.values()) packet.destroy()
+      this.conduitPackets.clear()
+      this.teardownRimChase()
+      this.teardownAtmosphere()
+      for (const [id, link] of this.dataLinks) {
+        this.startDataLink(id, link.facilityId)
+      }
     } else {
       // Motion on: (re)start decorative loops for entities already on screen.
       for (const id of this.mechSprites.keys()) this.startIdleBreath(id)
@@ -224,6 +289,14 @@ export class BayScene extends Phaser.Scene {
           this.createFacilityBeacon(facility.id, isoToScreen(facility.tile), index)
         }
       })
+      for (const [id, points] of this.conduitPathPoints) {
+        if (!this.conduitPacketTweens.has(id)) this.startConduitPacket(id, points)
+      }
+      this.buildRimLights()
+      this.buildAtmosphere()
+      for (const [id, link] of this.dataLinks) {
+        this.startDataLink(id, link.facilityId)
+      }
     }
     // Redraw the selection ring so its pulse (or lack of one) matches the mode.
     if (this.selectedCompanionId) {
@@ -279,7 +352,13 @@ export class BayScene extends Phaser.Scene {
     this.scale.on(Phaser.Scale.Events.RESIZE, this.applyResolution, this)
     this.generateSmokeTexture()
     this.drawGround()
+    this.buildApron()
+    this.buildRimLights()
+    this.buildAtmosphere()
     if (this.state) this.render()
+
+    bus.on('bayResetView', this.handleResetView)
+    this.setupCameraControls()
 
     void window.mechbay
       .getAppMode()
@@ -330,12 +409,100 @@ export class BayScene extends Phaser.Scene {
    * does not move.
    */
   private applyResolution(): void {
+    this.applyCameraTransform()
+  }
+
+  /**
+   * Compose the render-resolution zoom (BASE_ZOOM * renderScale, see
+   * applyResolution's doc comment above) with the user's mouse-wheel zoom
+   * and drag-pan, and re-center. Called on every RESIZE (keeps the
+   * anti-drift re-centering intact) AND on every user zoom/pan change, so
+   * the two never fight over the camera transform.
+   */
+  private applyCameraTransform(): void {
     const renderScale = this.scale.gameSize.width / BASE_VIEW_W
-    this.cameras.main.setZoom(BASE_ZOOM * renderScale)
-    // Center on the geometric middle of the 16×16 iso diamond. Center tile is
-    // (GRID_W/2, GRID_H/2), which iso-maps to (0, GRID_H*TILE_H/2).
+    this.cameras.main.setZoom(BASE_ZOOM * renderScale * this.userZoom)
+    // Center on the geometric middle of the 16×16 iso diamond, offset by the
+    // user's pan. Center tile is (GRID_W/2, GRID_H/2), which iso-maps to
+    // (0, GRID_H*TILE_H/2).
     const center = isoToScreen({ x: GRID_W / 2, y: GRID_H / 2 })
-    this.cameras.main.centerOn(center.x, center.y)
+    this.cameras.main.centerOn(center.x + this.userPan.x, center.y + this.userPan.y)
+  }
+
+  /**
+   * Mouse-wheel zoom toward the cursor, and left-drag panning on empty
+   * ground. A drag that starts on an interactive sprite (mech/facility) is
+   * left entirely to Phaser's own draggable system — we only start a camera
+   * pan when pointerdown lands on nothing (`currentlyOver.length === 0`),
+   * same guard the existing empty-tile click handler uses.
+   */
+  private setupCameraControls(): void {
+    this.input.on(
+      'wheel',
+      (pointer: Phaser.Input.Pointer, _objects: unknown, _dx: number, dy: number) => {
+        const camera = this.cameras.main
+        const before = camera.getWorldPoint(pointer.x, pointer.y)
+        const nextZoom = clampZoom(this.userZoom - Math.sign(dy) * 0.1)
+        if (nextZoom === this.userZoom) return
+        this.userZoom = nextZoom
+        this.userPan = clampPan(this.userPan, panBounds(this.userZoom, BASE_VIEW_W, BASE_VIEW_H))
+        this.applyCameraTransform()
+
+        // Re-derive the world point under the cursor at the new zoom and
+        // nudge pan by the difference, so the point the user was hovering
+        // stays fixed on screen instead of the zoom recentering on the diamond.
+        const after = camera.getWorldPoint(pointer.x, pointer.y)
+        this.userPan = clampPan(
+          { x: this.userPan.x + (before.x - after.x), y: this.userPan.y + (before.y - after.y) },
+          panBounds(this.userZoom, BASE_VIEW_W, BASE_VIEW_H)
+        )
+        this.applyCameraTransform()
+      }
+    )
+
+    this.input.on(
+      'pointerdown',
+      (pointer: Phaser.Input.Pointer, currentlyOver: Phaser.GameObjects.GameObject[]) => {
+        if (pointer.button !== 0 || currentlyOver.length > 0) return
+        this.isPanningCamera = true
+        this.panPointerStart = { x: pointer.x, y: pointer.y }
+        this.panStart = { ...this.userPan }
+      }
+    )
+
+    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      if (!this.isPanningCamera || !pointer.isDown) return
+      const zoom = this.cameras.main.zoom
+      const dx = (pointer.x - this.panPointerStart.x) / zoom
+      const dy = (pointer.y - this.panPointerStart.y) / zoom
+      // Dragging the pointer toward +x should slide the world toward +x under
+      // it, which means the camera's center moves toward -x — subtract, not add.
+      const pan = { x: this.panStart.x - dx, y: this.panStart.y - dy }
+      this.userPan = clampPan(pan, panBounds(this.userZoom, BASE_VIEW_W, BASE_VIEW_H))
+      this.applyCameraTransform()
+    })
+
+    this.input.on('pointerup', () => {
+      this.isPanningCamera = false
+    })
+  }
+
+  /** Animate the camera back to the default framing (RECENTER control). */
+  private resetView(): void {
+    const proxy = { zoom: this.userZoom, panX: this.userPan.x, panY: this.userPan.y }
+    this.tweens.add({
+      targets: proxy,
+      zoom: 1,
+      panX: 0,
+      panY: 0,
+      duration: 400,
+      ease: 'Sine.easeInOut',
+      onUpdate: () => {
+        this.userZoom = proxy.zoom
+        this.userPan = { x: proxy.panX, y: proxy.panY }
+        this.applyCameraTransform()
+      }
+    })
   }
 
   /**
@@ -397,15 +564,74 @@ export class BayScene extends Phaser.Scene {
   }
 
   /**
-   * Tile the ground diamond across the 16×16 grid. Each tile image sits
-   * centered on its iso position; overlap at edges is intentional (the
-   * orange grid line reads as a unified floor pattern).
+   * Build a small diagonal amber/black stripe texture at runtime — the
+   * hazard-tile overlay. Generated once and reused (clipped per-tile by a
+   * geometry mask), same pattern as generateSmokeTexture.
+   */
+  private generateHazardStripeTexture(): void {
+    if (this.textures.exists('hazard-stripe')) return
+    const size = 32
+    const g = this.add.graphics({ x: 0, y: 0 })
+    g.fillStyle(0x000000, 1)
+    g.fillRect(0, 0, size, size)
+    g.lineStyle(6, 0xefc36d, 1)
+    for (let offset = -size; offset < size * 2; offset += 12) {
+      g.lineBetween(offset, 0, offset + size, size)
+    }
+    g.generateTexture('hazard-stripe', size, size)
+    g.destroy()
+  }
+
+  /**
+   * Tile the ground diamond across the 16×16 grid. Each tile gets a
+   * deterministic tint/alpha from `deckTile` (bay-environment.ts) so the
+   * floor reads as worn plated steel instead of a flat repeat, plus a
+   * sparse amber/black hazard stripe overlay on the hangar row and outer
+   * edge. Overlap at edges is intentional (the orange grid line reads as a
+   * unified floor pattern).
    */
   private drawGround(): void {
+    this.generateHazardStripeTexture()
     for (let x = 0; x < GRID_W; x++) {
       for (let y = 0; y < GRID_H; y++) {
         const s = isoToScreen({ x, y })
-        this.add.image(s.x, s.y, 'ground').setDisplaySize(TILE_W, TILE_H).setDepth(0).setAlpha(0.58)
+        const tile = deckTile(x, y, GRID_W, GRID_H)
+        const baseAlpha = tile.variant === 'grate' ? 0.42 : 0.58
+        const shadeChannel = Math.round(200 * tile.shade)
+        this.add
+          .image(s.x, s.y, 'ground')
+          .setDisplaySize(TILE_W, TILE_H)
+          .setDepth(0)
+          .setAlpha(Math.min(1, baseAlpha * tile.shade))
+          .setTint(
+            Phaser.Display.Color.GetColor(
+              shadeChannel,
+              Math.round(shadeChannel * 0.93),
+              Math.round(shadeChannel * 0.72)
+            )
+          )
+
+        if (tile.variant !== 'hazard') continue
+        const w = TILE_W * 0.94
+        const h = TILE_H * 0.94
+        const overlay = this.add
+          .image(s.x, s.y, 'hazard-stripe')
+          .setDisplaySize(w, h)
+          .setDepth(0.5)
+          .setAlpha(0.22)
+        const maskShape = this.add.graphics()
+        maskShape.fillStyle(0xffffff)
+        maskShape.fillPoints(
+          [
+            { x: s.x, y: s.y - h / 2 },
+            { x: s.x + w / 2, y: s.y },
+            { x: s.x, y: s.y + h / 2 },
+            { x: s.x - w / 2, y: s.y }
+          ],
+          true
+        )
+        maskShape.setVisible(false)
+        overlay.setMask(maskShape.createGeometryMask())
       }
     }
     const perimeter = this.add.graphics().setDepth(1)
@@ -423,6 +649,134 @@ export class BayScene extends Phaser.Scene {
       const end = isoToScreen({ x: i, y: 15 })
       perimeter.lineBetween(start.x, start.y, end.x, end.y)
     }
+  }
+
+  /**
+   * A faint large-scale grid beyond the diamond, so the field reads as a
+   * hangar deck extending past the working area rather than floating in a
+   * void. Deliberately no solid fill: Scale.FIT letterboxes the canvas
+   * inside a wider frame, and an opaque apron would expose the canvas edge
+   * as a hard black box. The camera background matches the panel instead.
+   * Built once in create(): it doesn't depend on live state.
+   */
+  private buildApron(): void {
+    const g = this.add.graphics().setDepth(-2)
+    g.lineStyle(1, 0x2c3324, 0.12)
+    for (let i = -4; i <= GRID_W + 4; i += 4) {
+      const a = isoToScreen({ x: i, y: -4 })
+      const b = isoToScreen({ x: i, y: GRID_H + 4 })
+      g.lineBetween(a.x, a.y, b.x, b.y)
+      const c = isoToScreen({ x: -4, y: i })
+      const d = isoToScreen({ x: GRID_W + 4, y: i })
+      g.lineBetween(c.x, c.y, d.x, d.y)
+    }
+    this.apronLayer = g
+  }
+
+  /**
+   * Rim lights along the outer perimeter. Under motion, they chase in
+   * sequence (staggered tween delay) like runway edge lighting; under
+   * reduced motion they're drawn once at a fixed dim alpha. Rebuildable —
+   * called again from setReducedMotion's live-toggle path.
+   */
+  private buildRimLights(): void {
+    if (this.rimLights.length > 0) return
+    const amber = Phaser.Display.Color.HexStringToColor(colors.amber).color
+    const perimeterTiles: Array<{ x: number; y: number }> = []
+    for (let i = 0; i < GRID_W; i += 2) perimeterTiles.push({ x: i, y: -0.5 })
+    for (let i = 0; i < GRID_H; i += 2) perimeterTiles.push({ x: GRID_W - 0.5, y: i })
+    for (let i = 0; i < GRID_W; i += 2) perimeterTiles.push({ x: i, y: GRID_H - 0.5 })
+    for (let i = 0; i < GRID_H; i += 2) perimeterTiles.push({ x: -0.5, y: i })
+
+    perimeterTiles.forEach((tile, index) => {
+      const s = isoToScreen(tile)
+      const light = this.add.image(s.x, s.y, 'smoke').setTint(amber).setScale(0.1).setDepth(1)
+      this.rimLights.push(light)
+      if (this.reducedMotion) {
+        light.setAlpha(0.15)
+        return
+      }
+      light.setAlpha(0.05)
+      const tween = this.tweens.add({
+        targets: light,
+        alpha: 0.55,
+        duration: 260,
+        delay: index * 90,
+        yoyo: true,
+        hold: 3200,
+        repeat: -1,
+        ease: 'Sine.easeInOut'
+      })
+      this.rimLightTweens.push(tween)
+    })
+  }
+
+  private teardownRimChase(): void {
+    for (const tween of this.rimLightTweens) tween.stop()
+    this.rimLightTweens = []
+    for (const light of this.rimLights) light.destroy()
+    this.rimLights = []
+  }
+
+  /**
+   * Slow drifting low-alpha haze over the field plus two slow sweeping
+   * searchlight cones (additive blend, very low alpha) from opposite
+   * corners. Entirely skipped under reduced motion — pure ambience, same
+   * choice already made for facility beacons.
+   */
+  private buildAtmosphere(): void {
+    if (this.reducedMotion) return
+    if (this.hazeEmitter || this.searchlights.length > 0) return
+    const center = isoToScreen({ x: GRID_W / 2, y: GRID_H / 2 })
+    this.hazeEmitter = this.add
+      .particles(center.x, center.y, 'smoke', {
+        x: { min: -900, max: 900 },
+        y: { min: -500, max: 500 },
+        lifespan: 9000,
+        speed: { min: 2, max: 6 },
+        angle: { min: 160, max: 200 },
+        alpha: { start: 0.05, end: 0 },
+        scale: { start: 1.6, end: 2.4 },
+        frequency: 700,
+        quantity: 1,
+        tint: 0x8a9484
+      })
+      .setDepth(2)
+
+    const teal = Phaser.Display.Color.HexStringToColor(colors.cyan).color
+    const origins: Array<[{ x: number; y: number }, number, number]> = [
+      [isoToScreen({ x: -3, y: -3 }), 20, 60],
+      [isoToScreen({ x: GRID_W + 2, y: GRID_H + 2 }), 200, 240]
+    ]
+    for (const [origin, angleFrom, angleTo] of origins) {
+      const cone = this.add
+        .image(origin.x, origin.y, 'smoke')
+        .setTint(teal)
+        .setScale(6, 2.4)
+        .setAlpha(0.03)
+        .setDepth(2)
+        .setAngle(angleFrom)
+        .setBlendMode(Phaser.BlendModes.ADD)
+      this.searchlights.push(cone)
+      const tween = this.tweens.add({
+        targets: cone,
+        angle: angleTo,
+        duration: 7000,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut'
+      })
+      this.searchlightTweens.push(tween)
+    }
+  }
+
+  private teardownAtmosphere(): void {
+    this.hazeEmitter?.destroy()
+    this.hazeEmitter = null
+    for (const tween of this.searchlightTweens) tween.stop()
+    this.searchlightTweens = []
+    for (const cone of this.searchlights) cone.destroy()
+    this.searchlights = []
   }
 
   private render(): void {
@@ -453,7 +807,7 @@ export class BayScene extends Phaser.Scene {
       let dragStartY = 0
       let isDragging = false
 
-      sprite.on('dragstart', (_p: Phaser.Input.Pointer) => {
+      sprite.on('dragstart', () => {
         dragStartX = sprite.x
         dragStartY = sprite.y
         isDragging = false
@@ -487,6 +841,7 @@ export class BayScene extends Phaser.Scene {
 
       this.mechSprites.set(companion.id, sprite)
       this.startIdleBreath(companion.id)
+      this.buildHangarPad(companion.id, companion.homeTile)
     }
 
     // Sync NOT DEPLOYABLE overlay with current cliAvailable flag. This
@@ -555,6 +910,7 @@ export class BayScene extends Phaser.Scene {
         .setOrigin(0.5)
         .setDepth(500)
       this.facilityLabels.set(facility.id, label)
+      this.buildFacilityFoundation(facility.id, facility.tile)
     }
 
     // Remove sprites for entities no longer in state (e.g., decommissioned facility)
@@ -569,6 +925,9 @@ export class BayScene extends Phaser.Scene {
         this.killTween(this.workingSwayTweens, id)
         this.footDustEmitters.get(id)?.destroy()
         this.footDustEmitters.delete(id)
+        this.hangarPads.get(id)?.destroy()
+        this.hangarPads.delete(id)
+        this.stopDataLink(id)
         if (this.selectedCompanionId === id) {
           this.selectedCompanionId = null
           this.destroySelectionRing()
@@ -587,8 +946,14 @@ export class BayScene extends Phaser.Scene {
         this.killTween(this.workLightTweens, id)
         this.workLights.get(id)?.destroy()
         this.workLights.delete(id)
+        this.facilityFoundations.get(id)?.destroy()
+        this.facilityFoundations.delete(id)
+        for (const [companionId, link] of this.dataLinks) {
+          if (link.facilityId === id) this.stopDataLink(companionId)
+        }
       }
     }
+    this.rebuildConduits()
     this.publishDemoLayout()
   }
 
@@ -628,7 +993,11 @@ export class BayScene extends Phaser.Scene {
    * rather than running a second tween that would fight the position
    * tween over sprite.y every frame.
    */
-  walkTo(companionId: string, targetTile: { x: number; y: number }): Promise<void> {
+  walkTo(
+    companionId: string,
+    targetTile: { x: number; y: number },
+    opts?: { facilityTile?: { x: number; y: number } }
+  ): Promise<void> {
     this.cancelActiveWalk(companionId)
     const sprite = this.mechSprites.get(companionId)
     if (!sprite) return Promise.resolve()
@@ -636,6 +1005,12 @@ export class BayScene extends Phaser.Scene {
     const targetY = target.y - MECH_DISPLAY_SIZE * 0.35
     const startX = sprite.x
     const startY = sprite.y
+
+    // Deploy cinematics: a dashed amber route line for every walk, plus a
+    // target-lock reticle on the facility for walk-to-facility specifically
+    // (walk-home has no `facilityTile`, so no reticle).
+    this.showRouteLine(companionId, { x: startX, y: startY }, { x: target.x, y: targetY })
+    if (opts?.facilityTile) this.showReticle(companionId, opts.facilityTile)
 
     sprite.setFlipX(computeFacingFlipX(sprite.flipX, target.x - startX))
 
@@ -671,8 +1046,7 @@ export class BayScene extends Phaser.Scene {
     const promise = new Promise<void>((resolve) => {
       resolveWalk = resolve
     })
-    let tween!: Phaser.Tweens.Tween
-    tween = this.tweens.add({
+    const tween: Phaser.Tweens.Tween = this.tweens.add({
       targets: progress,
       t: 1,
       duration: walkDuration,
@@ -706,6 +1080,8 @@ export class BayScene extends Phaser.Scene {
         if (useWalkFrames && mechClass) this.applyMechTexture(sprite, MECH_KEY[mechClass])
         this.stopFootDust(companionId)
         this.playArrivalBurst(companionId, sprite)
+        this.hideRouteLine(companionId)
+        this.hideReticle(companionId, opts?.facilityTile !== undefined)
         if (this.activeWalks.get(companionId)?.tween === tween) {
           this.activeWalks.delete(companionId)
         }
@@ -728,6 +1104,8 @@ export class BayScene extends Phaser.Scene {
     activeWalk.tween.stop()
     this.activeWalks.delete(companionId)
     this.stopFootDust(companionId)
+    this.hideRouteLine(companionId)
+    this.hideReticle(companionId, false)
 
     const sprite = this.mechSprites.get(companionId)
     const mechClass = sprite?.getData('mechClass') as MechClass | undefined
@@ -808,6 +1186,482 @@ export class BayScene extends Phaser.Scene {
       x: Math.min(GRID_W - 1, tile.x + 1),
       y: Math.min(GRID_H - 1, tile.y + 1)
     }
+  }
+
+  /**
+   * Landing pad under a companion's home tile: an amber-cornered iso
+   * diamond with a faint ring, ground-level (depth 1, below every mech/
+   * facility). Built once per companion — home tiles don't move.
+   */
+  private buildHangarPad(companionId: string, homeTile: { x: number; y: number }): void {
+    if (this.hangarPads.has(companionId)) return
+    const s = isoToScreen(homeTile)
+    const amber = Phaser.Display.Color.HexStringToColor(colors.amber).color
+    const w = TILE_W * 0.72
+    const h = TILE_H * 0.72
+    const g = this.add.graphics().setDepth(1)
+    g.lineStyle(1, amber, 0.18)
+    g.strokeEllipse(s.x, s.y, w, h)
+    const corners = [
+      { x: s.x, y: s.y - h / 2 },
+      { x: s.x + w / 2, y: s.y },
+      { x: s.x, y: s.y + h / 2 },
+      { x: s.x - w / 2, y: s.y }
+    ]
+    g.lineStyle(2, amber, 0.4)
+    for (const c of corners) {
+      g.lineBetween(c.x - 6, c.y, c.x + 6, c.y)
+      g.lineBetween(c.x, c.y - 6, c.x, c.y + 6)
+    }
+    this.hangarPads.set(companionId, g)
+  }
+
+  /** Darker iso footprint plate under a facility, with a thin edge-light border. */
+  private buildFacilityFoundation(facilityId: string, tile: { x: number; y: number }): void {
+    if (this.facilityFoundations.has(facilityId)) return
+    const s = isoToScreen(tile)
+    const w = FACILITY_DISPLAY_W * 0.62
+    const h = FACILITY_DISPLAY_H * 0.5
+    const points = [
+      { x: s.x, y: s.y - h / 2 },
+      { x: s.x + w / 2, y: s.y },
+      { x: s.x, y: s.y + h / 2 },
+      { x: s.x - w / 2, y: s.y }
+    ]
+    const g = this.add.graphics().setDepth(1)
+    g.fillStyle(0x000000, 0.3)
+    g.fillPoints(points, true)
+    const teal = Phaser.Display.Color.HexStringToColor(colors.cyan).color
+    g.lineStyle(1, teal, 0.3)
+    g.strokePoints(points, true)
+    this.facilityFoundations.set(facilityId, g)
+  }
+
+  /**
+   * Re-derive the power-conduit layout from the current facility set:
+   * dark recessed channels (thin teal core line) from the command-center
+   * facility (or the first facility if none) to every other facility, along
+   * grid axes via conduitPath (bay-environment.ts). Skipped/rebuilt only
+   * when the facility id/tile signature actually changes, per the
+   * "redrawn only when facilities change" performance note.
+   */
+  private rebuildConduits(): void {
+    if (!this.state) return
+    const facilities = this.state.facilities
+    const signature = facilities
+      .map((f) => `${f.id}:${f.tile.x},${f.tile.y}`)
+      .sort()
+      .join('|')
+    if (signature === this.conduitSignature) return
+    this.conduitSignature = signature
+
+    this.conduitsLayer?.destroy()
+    this.conduitsLayer = null
+    for (const tween of this.conduitPacketTweens.values()) tween.stop()
+    this.conduitPacketTweens.clear()
+    for (const packet of this.conduitPackets.values()) packet.destroy()
+    this.conduitPackets.clear()
+    this.conduitPathPoints.clear()
+
+    if (facilities.length < 2) return
+    const hub = facilities.find((f) => f.facilityType === 'command-center') ?? facilities[0]
+    const others = facilities.filter((f) => f.id !== hub.id)
+    if (others.length === 0) return
+
+    const graphics = this.add.graphics().setDepth(2)
+    const teal = Phaser.Display.Color.HexStringToColor(colors.cyan).color
+    for (const target of others) {
+      const points = conduitPath(hub.tile, target.tile).map(isoToScreen)
+      graphics.lineStyle(6, 0x000000, 0.35)
+      graphics.strokePoints(points, false)
+      graphics.lineStyle(1.5, teal, 0.5)
+      graphics.strokePoints(points, false)
+
+      const conduitId = `${hub.id}->${target.id}`
+      this.conduitPathPoints.set(conduitId, points)
+      if (!this.reducedMotion) this.startConduitPacket(conduitId, points)
+    }
+    this.conduitsLayer = graphics
+  }
+
+  /** Interpolate a point at fraction `t` along a poly-line's total length. */
+  private pointAlongPath(
+    points: Array<{ x: number; y: number }>,
+    t: number
+  ): { x: number; y: number } {
+    if (points.length === 1) return points[0]
+    const segmentLengths: number[] = []
+    let total = 0
+    for (let i = 1; i < points.length; i++) {
+      const d = Phaser.Math.Distance.Between(
+        points[i - 1].x,
+        points[i - 1].y,
+        points[i].x,
+        points[i].y
+      )
+      segmentLengths.push(d)
+      total += d
+    }
+    let remaining = Phaser.Math.Clamp(t, 0, 1) * total
+    for (let i = 0; i < segmentLengths.length; i++) {
+      const len = segmentLengths[i]
+      if (remaining <= len || i === segmentLengths.length - 1) {
+        const segT = len === 0 ? 0 : Phaser.Math.Clamp(remaining / len, 0, 1)
+        return {
+          x: Phaser.Math.Linear(points[i].x, points[i + 1].x, segT),
+          y: Phaser.Math.Linear(points[i].y, points[i + 1].y, segT)
+        }
+      }
+      remaining -= len
+    }
+    return points[points.length - 1]
+  }
+
+  /** A small glow packet that loops along a conduit's route (motion on only). */
+  private startConduitPacket(id: string, points: Array<{ x: number; y: number }>): void {
+    if (this.conduitPacketTweens.has(id)) return
+    const teal = Phaser.Display.Color.HexStringToColor(colors.cyan).color
+    const packet = this.add
+      .image(points[0].x, points[0].y, 'smoke')
+      .setTint(teal)
+      .setScale(0.14)
+      .setAlpha(0.85)
+      .setDepth(3)
+      .setBlendMode(Phaser.BlendModes.ADD)
+    this.conduitPackets.set(id, packet)
+    const progress = { t: 0 }
+    const tween = this.tweens.add({
+      targets: progress,
+      t: 1,
+      duration: 1800 + Math.random() * 600,
+      repeat: -1,
+      delay: Math.random() * 1200,
+      ease: 'Sine.easeInOut',
+      onUpdate: () => {
+        const p = this.pointAlongPath(points, progress.t)
+        packet.setPosition(p.x, p.y)
+      }
+    })
+    this.conduitPacketTweens.set(id, tween)
+  }
+
+  /**
+   * Draw a dashed line with a single direction chevron at its midpoint —
+   * used for both the walk-to-facility route and the walk-home route.
+   * Straight-line dashing (not routed along conduitPath) since a mech
+   * walks directly to its target, not along grid axes.
+   */
+  private drawDashedLine(
+    g: Phaser.GameObjects.Graphics,
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+    color: number,
+    alpha: number
+  ): void {
+    const dash = 10
+    const gap = 8
+    const dist = Phaser.Math.Distance.Between(from.x, from.y, to.x, to.y)
+    const angle = Phaser.Math.Angle.Between(from.x, from.y, to.x, to.y)
+    g.lineStyle(2, color, alpha)
+    for (let d = 0; d < dist; d += dash + gap) {
+      const segEnd = Math.min(d + dash, dist)
+      g.lineBetween(
+        from.x + Math.cos(angle) * d,
+        from.y + Math.sin(angle) * d,
+        from.x + Math.cos(angle) * segEnd,
+        from.y + Math.sin(angle) * segEnd
+      )
+    }
+    if (dist < 4) return
+    const midD = dist / 2
+    const mx = from.x + Math.cos(angle) * midD
+    const my = from.y + Math.sin(angle) * midD
+    const chevSize = 6
+    const perp = angle + Math.PI / 2
+    g.lineStyle(2, color, Math.min(1, alpha + 0.2))
+    const back1 = {
+      x: mx - Math.cos(angle) * chevSize + Math.cos(perp) * chevSize,
+      y: my - Math.sin(angle) * chevSize + Math.sin(perp) * chevSize
+    }
+    const back2 = {
+      x: mx - Math.cos(angle) * chevSize - Math.cos(perp) * chevSize,
+      y: my - Math.sin(angle) * chevSize - Math.sin(perp) * chevSize
+    }
+    g.lineBetween(back1.x, back1.y, mx, my)
+    g.lineBetween(back2.x, back2.y, mx, my)
+  }
+
+  /** Dashed amber route line from a mech's walk start to its destination. */
+  private showRouteLine(
+    companionId: string,
+    from: { x: number; y: number },
+    to: { x: number; y: number }
+  ): void {
+    this.hideRouteLineImmediately(companionId)
+    const amber = Phaser.Display.Color.HexStringToColor(colors.amber).color
+    const g = this.add.graphics().setDepth(2)
+    this.drawDashedLine(g, from, to, amber, this.reducedMotion ? 0.35 : 0.55)
+    this.routeLines.set(companionId, g)
+  }
+
+  private hideRouteLineImmediately(companionId: string): void {
+    const g = this.routeLines.get(companionId)
+    if (!g) return
+    this.routeLines.delete(companionId)
+    g.destroy()
+  }
+
+  /** Fade the route line out (walk completed or cancelled) rather than snapping it away. */
+  private hideRouteLine(companionId: string): void {
+    const g = this.routeLines.get(companionId)
+    if (!g) return
+    this.routeLines.delete(companionId)
+    this.tweens.add({
+      targets: g,
+      alpha: 0,
+      duration: this.reducedMotion ? 200 : 350,
+      onComplete: () => g.destroy()
+    })
+  }
+
+  /**
+   * Rotating amber corner-bracket reticle over a facility, scaling in from
+   * 1.6x to 1x — the "target lock" while a mech walks toward it. Under
+   * reduced motion it's drawn once, static, at a fixed alpha.
+   */
+  private showReticle(companionId: string, facilityTile: { x: number; y: number }): void {
+    this.hideReticleImmediately(companionId)
+    const s = isoToScreen(facilityTile)
+    const amber = Phaser.Display.Color.HexStringToColor(colors.amber).color
+    const ring = this.add
+      .graphics()
+      .setPosition(s.x, s.y - FACILITY_DISPLAY_H * 0.3)
+      .setDepth(60 + s.y)
+    const size = FACILITY_DISPLAY_W * 0.4
+    const half = size / 2
+    const len = size * 0.28
+    const drawBrackets = (alpha: number): void => {
+      ring.clear()
+      ring.lineStyle(2, amber, alpha)
+      const corners: Array<[number, number, number, number]> = [
+        [-half, -half, 1, 1],
+        [half, -half, -1, 1],
+        [half, half, -1, -1],
+        [-half, half, 1, -1]
+      ]
+      for (const [cx, cy, dx, dy] of corners) {
+        ring.lineBetween(cx, cy, cx + len * dx, cy)
+        ring.lineBetween(cx, cy, cx, cy + len * dy)
+      }
+    }
+
+    if (this.reducedMotion) {
+      drawBrackets(0.8)
+      this.walkReticles.set(companionId, { ring, tween: null })
+      return
+    }
+
+    ring.setScale(1.6)
+    ring.setAlpha(0)
+    drawBrackets(0.85)
+    const introTween = this.tweens.add({
+      targets: ring,
+      scale: 1,
+      alpha: 0.85,
+      duration: 260,
+      ease: 'Quad.Out',
+      onComplete: () => {
+        const spinTween = this.tweens.add({
+          targets: ring,
+          angle: 360,
+          duration: 6000,
+          repeat: -1,
+          ease: 'Linear'
+        })
+        this.walkReticles.set(companionId, { ring, tween: spinTween })
+      }
+    })
+    this.walkReticles.set(companionId, { ring, tween: introTween })
+  }
+
+  private hideReticleImmediately(companionId: string): void {
+    const entry = this.walkReticles.get(companionId)
+    if (!entry) return
+    this.walkReticles.delete(companionId)
+    entry.tween?.stop()
+    entry.ring.destroy()
+  }
+
+  /** Flash the reticle once on arrival, then fade it out (rather than snapping away). */
+  private hideReticle(companionId: string, flashOnArrival: boolean): void {
+    const entry = this.walkReticles.get(companionId)
+    if (!entry) return
+    this.walkReticles.delete(companionId)
+    entry.tween?.stop()
+    if (!flashOnArrival) {
+      entry.ring.destroy()
+      return
+    }
+    entry.ring.setAlpha(1)
+    this.tweens.add({
+      targets: entry.ring,
+      alpha: 0,
+      duration: this.reducedMotion ? 300 : 420,
+      onComplete: () => entry.ring.destroy()
+    })
+  }
+
+  /**
+   * Thin teal data-link line between a working mech and its facility, with
+   * packets traveling both directions (motion on) or static (motion off).
+   * Rebuildable in place — called again from setReducedMotion's toggle path.
+   */
+  private startDataLink(companionId: string, facilityId: string): void {
+    this.stopDataLink(companionId)
+    const sprite = this.mechSprites.get(companionId)
+    const facSprite = this.facilitySprites.get(facilityId)
+    if (!sprite || !facSprite) return
+    const teal = Phaser.Display.Color.HexStringToColor(colors.cyan).color
+    const from = { x: sprite.x, y: sprite.y + MECH_DISPLAY_SIZE * 0.3 }
+    const to = { x: facSprite.x, y: facSprite.y }
+    const line = this.add.graphics().setDepth(Math.max(1, sprite.depth - 1))
+    line.lineStyle(1, teal, this.reducedMotion ? 0.3 : 0.45)
+    line.lineBetween(from.x, from.y, to.x, to.y)
+
+    const packets: Phaser.GameObjects.Image[] = []
+    const tweens: Phaser.Tweens.Tween[] = []
+    if (!this.reducedMotion) {
+      for (const reverse of [false, true]) {
+        const packet = this.add
+          .image(from.x, from.y, 'smoke')
+          .setTint(teal)
+          .setScale(0.1)
+          .setAlpha(0.8)
+          .setDepth(line.depth + 1)
+          .setBlendMode(Phaser.BlendModes.ADD)
+        const progress = { t: reverse ? 1 : 0 }
+        const tween = this.tweens.add({
+          targets: progress,
+          t: reverse ? 0 : 1,
+          duration: 900,
+          repeat: -1,
+          delay: reverse ? 300 : 0,
+          ease: 'Sine.easeInOut',
+          onUpdate: () => {
+            packet.setPosition(
+              Phaser.Math.Linear(from.x, to.x, progress.t),
+              Phaser.Math.Linear(from.y, to.y, progress.t)
+            )
+          }
+        })
+        packets.push(packet)
+        tweens.push(tween)
+      }
+    }
+    this.dataLinks.set(companionId, { facilityId, line, packets, tweens })
+  }
+
+  private stopDataLink(companionId: string): void {
+    const link = this.dataLinks.get(companionId)
+    if (!link) return
+    this.dataLinks.delete(companionId)
+    for (const tween of link.tweens) tween.stop()
+    for (const packet of link.packets) packet.destroy()
+    link.line.destroy()
+  }
+
+  /**
+   * Success: an expanding iso ring shockwave at the mech's feet plus a
+   * short upward spark burst. Under reduced motion, a single static flash
+   * instead of the expand tween/particles.
+   */
+  private playShockwave(companionId: string, colorHex: string): void {
+    const sprite = this.mechSprites.get(companionId)
+    if (!sprite) return
+    const color = Phaser.Display.Color.HexStringToColor(colorHex).color
+    const feetY = sprite.y + MECH_DISPLAY_SIZE * 0.42
+    const ring = this.add
+      .graphics()
+      .setPosition(sprite.x, feetY)
+      .setDepth(Math.max(1, sprite.depth - 1))
+    this.transientEffects.add(ring)
+
+    if (this.reducedMotion) {
+      ring.lineStyle(3, color, 0.85)
+      ring.strokeEllipse(0, 0, TILE_W * 0.6, TILE_H * 0.6)
+      this.tweens.add({
+        targets: ring,
+        alpha: 0,
+        duration: 500,
+        delay: 200,
+        onComplete: () => {
+          this.transientEffects.delete(ring)
+          ring.destroy()
+        }
+      })
+      return
+    }
+
+    const state = { scale: 0.2, alpha: 0.9 }
+    this.tweens.add({
+      targets: state,
+      scale: 1.6,
+      alpha: 0,
+      duration: 650,
+      ease: 'Cubic.easeOut',
+      onUpdate: () => {
+        ring.clear()
+        ring.lineStyle(3, color, state.alpha)
+        ring.strokeEllipse(0, 0, TILE_W * 0.6 * state.scale, TILE_H * 0.6 * state.scale)
+      },
+      onComplete: () => {
+        this.transientEffects.delete(ring)
+        ring.destroy()
+      }
+    })
+
+    const sparks = this.add
+      .particles(sprite.x, feetY, 'smoke', {
+        lifespan: 500,
+        speed: { min: 40, max: 90 },
+        angle: { min: 250, max: 290 },
+        alpha: { start: 0.8, end: 0 },
+        scale: { start: 0.18, end: 0.05 },
+        tint: color,
+        emitting: false
+      })
+      .setDepth(Math.max(1, sprite.depth - 1))
+    this.transientEffects.add(sparks)
+    sparks.explode(10)
+    this.time.delayedCall(500, () => {
+      this.transientEffects.delete(sparks)
+      sparks.destroy()
+    })
+  }
+
+  /** Failure: a single red ring flash at the mech's feet, no sparks. */
+  private playFailureFlash(companionId: string): void {
+    const sprite = this.mechSprites.get(companionId)
+    if (!sprite) return
+    const red = Phaser.Display.Color.HexStringToColor(colors.statusFailed).color
+    const feetY = sprite.y + MECH_DISPLAY_SIZE * 0.42
+    const ring = this.add
+      .graphics()
+      .setPosition(sprite.x, feetY)
+      .setDepth(Math.max(1, sprite.depth - 1))
+    ring.lineStyle(3, red, 0.9)
+    ring.strokeEllipse(0, 0, TILE_W * 0.6, TILE_H * 0.6)
+    this.transientEffects.add(ring)
+    this.tweens.add({
+      targets: ring,
+      alpha: 0,
+      duration: this.reducedMotion ? 500 : 350,
+      delay: this.reducedMotion ? 0 : 150,
+      onComplete: () => {
+        this.transientEffects.delete(ring)
+        ring.destroy()
+      }
+    })
   }
 
   /**
@@ -1091,6 +1945,8 @@ export class BayScene extends Phaser.Scene {
       this.workingSwayTweens.set(companionId, swayTween)
     }
 
+    this.startDataLink(companionId, facilityId)
+
     if (this.reducedMotion || this.workLights.has(facilityId)) return
     const facSprite = this.facilitySprites.get(facilityId)
     if (!facSprite) return
@@ -1119,6 +1975,7 @@ export class BayScene extends Phaser.Scene {
     const sprite = this.mechSprites.get(companionId)
     if (sprite) sprite.angle = 0
     this.startIdleBreath(companionId)
+    this.stopDataLink(companionId)
 
     this.killTween(this.workLightTweens, facilityId)
     const light = this.workLights.get(facilityId)
@@ -1204,6 +2061,40 @@ export class BayScene extends Phaser.Scene {
     this.facilityLabels.clear()
     this.destroySelectionRing()
     this.selectedCompanionId = null
+
+    // Living-bay environment layer.
+    for (const pad of this.hangarPads.values()) pad.destroy()
+    this.hangarPads.clear()
+    for (const foundation of this.facilityFoundations.values()) foundation.destroy()
+    this.facilityFoundations.clear()
+    this.conduitsLayer?.destroy()
+    this.conduitsLayer = null
+    this.conduitSignature = ''
+    this.conduitPathPoints.clear()
+    for (const tween of this.conduitPacketTweens.values()) tween.stop()
+    this.conduitPacketTweens.clear()
+    for (const packet of this.conduitPackets.values()) packet.destroy()
+    this.conduitPackets.clear()
+    this.apronLayer?.destroy()
+    this.apronLayer = null
+    this.teardownRimChase()
+    this.teardownAtmosphere()
+
+    // Deploy cinematics.
+    for (const [companionId] of [...this.walkReticles]) this.hideReticleImmediately(companionId)
+    for (const [companionId] of [...this.routeLines]) this.hideRouteLineImmediately(companionId)
+    for (const companionId of [...this.dataLinks.keys()]) this.stopDataLink(companionId)
+    for (const effect of this.transientEffects) {
+      this.tweens.killTweensOf(effect)
+      effect.destroy()
+    }
+    this.transientEffects.clear()
+
+    bus.off('bayResetView', this.handleResetView)
+    this.isPanningCamera = false
+    this.userZoom = 1
+    this.userPan = { x: 0, y: 0 }
+
     if (this.demoLayoutEnabled) {
       delete window.__mechbayBayLayout
       delete window.__mechbayState
@@ -1226,7 +2117,11 @@ export class BayScene extends Phaser.Scene {
       switch (action.kind) {
         case 'walk-to-facility': {
           const facility = next.facilities.find((candidate) => candidate.id === action.facilityId)
-          if (facility) void this.walkTo(action.companionId, this.facilityStandTile(facility.tile))
+          if (facility) {
+            void this.walkTo(action.companionId, this.facilityStandTile(facility.tile), {
+              facilityTile: facility.tile
+            })
+          }
           break
         }
         case 'start-working': {
@@ -1248,8 +2143,10 @@ export class BayScene extends Phaser.Scene {
         case 'dead-in-field':
           this.cancelActiveWalk(action.companionId)
           this.applyDeadInField(action.companionId)
+          this.playFailureFlash(action.companionId)
           break
         case 'completion-bubble': {
+          this.playShockwave(action.companionId, colors.statusWorking)
           const deployment = next.deployments.find(
             (candidate) => candidate.id === action.deploymentId
           )
