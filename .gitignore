@@ -29,5 +29,6 @@ artifacts/
 docs/*
 !docs/demo.gif
 !docs/screenshot-bay.png
+!docs/social-preview.png
 !docs/design-system.md
 !docs/portfolio-refresh.md

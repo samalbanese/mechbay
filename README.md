@@ -1,6 +1,8 @@
 # MechBay
 
 [![CI](https://github.com/samalbanese/mechbay/actions/workflows/ci.yml/badge.svg)](https://github.com/samalbanese/mechbay/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/samalbanese/mechbay?label=download)](https://github.com/samalbanese/mechbay/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-efc36d.svg)](LICENSE)
 
 _A BattleTech-inspired command bay for AI coding agents._
 
@@ -15,6 +17,24 @@ _Recorded from the real desktop app in isolated simulation mode. The agent proce
 The bay now puts the whole crew and mission loop in view: a selectable five-mech roster, keyboard-accessible mission preparation, live fleet counts, a sortie board, project controls, and debriefs you can reopen after a mission returns. The industrial command deck pairs the original isometric world with locally bundled Barlow and IBM Plex typography.
 
 ![MechBay command deck with crew roster and mission control](docs/screenshot-bay.png)
+
+## Download
+
+Grab the installer for your platform from the [latest release](https://github.com/samalbanese/mechbay/releases/latest):
+
+| Platform | File                                                                                 |
+| -------- | ------------------------------------------------------------------------------------ |
+| Windows  | `MechBay-<version>-setup.exe`                                                        |
+| macOS    | `MechBay-<version>-arm64.dmg` (Apple Silicon) or `MechBay-<version>-x64.dmg` (Intel) |
+| Linux    | `MechBay-<version>.AppImage`                                                         |
+
+The installers are not code-signed yet, so your OS will ask once before the first launch:
+
+- **Windows:** SmartScreen shows "Windows protected your PC". Click **More info**, then **Run anyway**.
+- **macOS:** right-click MechBay in Applications, choose **Open**, then confirm. (Or allow it under System Settings, Privacy & Security.)
+- **Linux:** mark the AppImage executable with `chmod +x MechBay-*.AppImage`, then run it.
+
+Prefer to build it yourself? The next section runs it from source.
 
 ## Try it in 60 seconds (no API keys)
 
@@ -37,7 +57,11 @@ Have a real agent CLI installed? `npm run dev` and deploy for real.
 - Maps five named mechs to Claude Code, Codex, Kimi on Fireworks AI, Gemini CLI, or any command-line agent you bring yourself.
 - Streams live output to the HUD; Raven can also show opt-in `INTENT` and `FINDINGS` thought cards.
 - Runs up to three deployments at once and places the rest in a FIFO queue.
-- Captures a Mission Debrief after every run: changed files, insertions, deletions, and a per-file diff table.
+- Captures a Mission Debrief after every run: changed files, insertions, deletions, and a built-in diff viewer. Click any changed file to read the exact lines the agent added and removed, new files included.
+- Renders a living bay: a hangar deck with hazard-striped landing pads, power conduits pulsing data between linked facilities, drifting haze, and sweeping searchlights. Scroll to zoom, drag empty ground to pan, and hit **RECENTER** to snap back.
+- Plays deploy cinematics: a target-lock reticle on the destination, a route line for the walk, a live data link while the mech works, a shockwave when it succeeds, and a red warning ring when it goes down.
+- Keeps a service record for every mech. Sorties, success rate, and lines shipped earn XP, and pilots climb six ranks from Recruit to Ace, shown as insignia and an XP bar on each crew card.
+- Sends mission alerts while you're in another window: a desktop notification, a taskbar flash, and a working indicator on the taskbar icon. Toggle them in **⚙ SETTINGS**.
 - Keeps each mech's `soul.md` and `memory.md` between deployments, with an in-app Journal for editing both.
 - Handles the rough edges: dead-in-field failure states, click-to-recover, and a crash-recovery modal on the next launch.
 - Lets you browse facility files read-only through a whitelist guard, bulk import projects, click an empty bay tile to add a facility from a directory picker, or click an unlinked starter building to connect it to a project directory.
@@ -124,7 +148,7 @@ flowchart LR
   STATE --> SOUL
 ```
 
-One `Runner` interface is the entire boundary between MechBay and the outside world. Claude Code, Codex, Gemini, Kimi, a bring-your-own CLI, and the demo-mode simulator are each a drop-in implementation of it. Everything crossing the Electron IPC boundary is a serializable type declared in one shared registry, and every channel name lives in a single constants file. The suite is 305 unit and integration tests plus a typecheck gate on CI.
+One `Runner` interface is the entire boundary between MechBay and the outside world. Claude Code, Codex, Gemini, Kimi, a bring-your-own CLI, and the demo-mode simulator are each a drop-in implementation of it. Everything crossing the Electron IPC boundary is a serializable type declared in one shared registry, and every channel name lives in a single constants file. The suite is 374 unit and integration tests, and CI runs them plus a typecheck and a full production build on every push.
 
 ## Status
 
@@ -156,7 +180,9 @@ $env:MECHBAY_HERMES_CMD = "opencode {PROMPT}"
 
 ## Mission Debrief, souls, and memory
 
-When a mech returns, MechBay runs a git diff in that facility and opens a **MISSION DEBRIEF** modal with file-level change stats. A check-mark speech bubble appears over the returning mech, and the outcome is written to that mech's `memory.md`.
+When a mech returns, MechBay runs a git diff in that facility and opens a **MISSION DEBRIEF** modal with file-level change stats. Select any file in the delta table to open its patch inline: added and removed lines with old and new line numbers, including files the agent created from scratch. A check-mark speech bubble appears over the returning mech, and the outcome is written to that mech's `memory.md` and counted toward its service record.
+
+The diff viewer only reads files the mission itself reported as changed, and it refuses paths that escape the project, including through symlinks.
 
 Each companion also has a `soul.md`: its persona and working voice. Both files are included in the next deployment's context. Use the Journal tab to read or edit them without leaving the app.
 
@@ -194,6 +220,17 @@ npm run build:mac    # build a macOS package
 npm run build:linux  # build a Linux package
 npm run chromakey    # process mech and facility sprites
 ```
+
+### Cutting a release
+
+Pushing a version tag builds Windows, macOS, and Linux installers on GitHub Actions and attaches them to a **draft** release for review:
+
+```bash
+npm version minor    # bumps package.json and creates the vX.Y.0 tag
+git push origin main --follow-tags
+```
+
+Open the draft on the Releases page, check the notes and files, then click **Publish release**.
 
 ## License
 
