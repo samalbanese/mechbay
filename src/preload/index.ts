@@ -17,7 +17,8 @@ import type {
   CompanionConfigurePayload,
   CompanionConfigureResult,
   AgentFamily,
-  SimpleActionResult
+  SimpleActionResult,
+  DiffFileGetResult
 } from '../shared/types'
 
 const mechbayApi = {
@@ -76,7 +77,9 @@ const mechbayApi = {
   updateSettings: (patch: {
     reduceMotion?: boolean
     crtOverlay?: boolean
-  }): Promise<SimpleActionResult> => ipcRenderer.invoke(IPC.SETTINGS_UPDATE, patch)
+  }): Promise<SimpleActionResult> => ipcRenderer.invoke(IPC.SETTINGS_UPDATE, patch),
+  diffFileGet: (deploymentId: string, path: string): Promise<DiffFileGetResult> =>
+    ipcRenderer.invoke(IPC.DIFF_FILE_GET, { deploymentId, path })
 }
 
 export type MechBayApi = typeof mechbayApi

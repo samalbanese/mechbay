@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Companion, Deployment, Facility } from '../../../shared/types'
 import { colors, type } from '../theme'
+import { DiffViewer } from './DiffViewer'
 
 const TASK_LIMIT = 200
 const FILE_LIMIT = 20
@@ -32,15 +33,21 @@ export function DebriefModal(props: {
     0,
     (deployment.diffStats?.filesChanged ?? diffFiles?.length ?? 0) - visibleFiles.length
   )
+  const [selectedPath, setSelectedPath] = useState<string | null>(
+    visibleFiles.length > 0 ? visibleFiles[0].path : null
+  )
 
+  const { onDismiss } = props
   useEffect(() => {
     dismissButtonRef.current?.focus()
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape' || event.key === 'Enter') props.onDismiss()
+      // Escape-only: file rows are focusable and Enter selects one, so
+      // dismissing the whole modal on Enter would fight that interaction.
+      if (event.key === 'Escape') onDismiss()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [props.onDismiss])
+  }, [onDismiss])
 
   return (
     <div style={backdropStyle}>
@@ -60,7 +67,7 @@ export function DebriefModal(props: {
           </span>
         </div>
         <div id="mission-debrief-title" style={titleStyle}>
-          ■ MISSION DEBRIEF — {props.companion.name.toUpperCase()} ←{' '}
+          ■ MISSION DEBRIEF / {props.companion.name.toUpperCase()} ←{' '}
           {props.facility.name.toUpperCase()}
         </div>
         <div style={subtitleStyle}>AFTER-ACTION TELEMETRY</div>
@@ -93,7 +100,7 @@ export function DebriefModal(props: {
           </div>
           <div style={detailRowStyle}>
             <dt style={labelStyle}>EXIT CODE</dt>
-            <dd style={valueStyle}>{deployment.exitCode ?? '—'}</dd>
+            <dd style={valueStyle}>{deployment.exitCode ?? 'N/A'}</dd>
           </div>
           <div style={detailRowStyle}>
             <dt style={labelStyle}>SUMMARY</dt>
@@ -102,7 +109,7 @@ export function DebriefModal(props: {
         </dl>
 
         {diffFiles === undefined ? (
-          <div style={unavailableStyle}>No git repository detected — file diff unavailable.</div>
+          <div style={unavailableStyle}>No git repository detected: file diff unavailable.</div>
         ) : (
           <section aria-label="File changes">
             <div style={tableLabelStyle}>FILE DELTA</div>
@@ -119,27 +126,52 @@ export function DebriefModal(props: {
                     </tr>
                   </thead>
                   <tbody>
-                    {visibleFiles.map((file) => (
-                      <tr key={file.path}>
-                        <td style={pathCellStyle} title={file.path}>
-                          {file.path}
-                        </td>
-                        <td style={insertionCellStyle}>+{file.insertions}</td>
-                        <td style={deletionCellStyle}>−{file.deletions}</td>
-                      </tr>
-                    ))}
+                    {visibleFiles.map((file) => {
+                      const isSelected = file.path === selectedPath
+                      const rowId = `debrief-diff-row-${file.path}`
+                      return (
+                        <tr key={file.path}>
+                          <td colSpan={3} style={{ padding: 0 }}>
+                            <button
+                              type="button"
+                              id={rowId}
+                              className="debrief-file-row"
+                              aria-expanded={isSelected}
+                              aria-controls={isSelected ? 'debrief-diff-panel' : undefined}
+                              style={fileRowStyle}
+                              onClick={() =>
+                                setSelectedPath((current) =>
+                                  current === file.path ? null : file.path
+                                )
+                              }
+                            >
+                              <span style={pathCellInnerStyle} title={file.path}>
+                                {file.path}
+                              </span>
+                              <span style={insertionCellInnerStyle}>+{file.insertions}</span>
+                              <span style={deletionCellInnerStyle}>−{file.deletions}</span>
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
             )}
             {hiddenFiles > 0 && <div style={moreFilesStyle}>… +{hiddenFiles} more files</div>}
+            {selectedPath && (
+              <div id="debrief-diff-panel" role="region" aria-label={`Diff for ${selectedPath}`}>
+                <DiffViewer deploymentId={deployment.id} path={selectedPath} />
+              </div>
+            )}
           </section>
         )}
 
         <p className="debrief-note">
-          Captured from the project’s working tree. Existing uncommitted changes may be included.
-          Line totals cover tracked text changes; new and binary files are counted without line
-          totals.
+          Read from the project’s current working tree against the pre-mission baseline: if you
+          edited files after the mission finished, those edits are included too. Line totals cover
+          tracked and new text files; binary files are counted without line totals.
         </p>
         <div style={actionRowStyle}>
           <button
@@ -167,7 +199,7 @@ const backdropStyle: React.CSSProperties = {
 }
 
 const panelStyle: React.CSSProperties = {
-  width: 'min(760px, calc(100vw - 48px))',
+  width: 'min(1080px, calc(100vw - 48px))',
   maxHeight: 'calc(100vh - 48px)',
   overflow: 'auto',
   background: colors.bgHud,
@@ -279,26 +311,32 @@ const numberHeaderStyle: React.CSSProperties = {
   width: 64
 }
 
-const pathCellStyle: React.CSSProperties = {
-  maxWidth: 0,
-  overflow: 'hidden',
+const fileRowStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'minmax(0, 1fr) 64px 64px',
+  width: '100%',
   padding: '6px 10px',
   borderBottom: `1px dotted ${colors.borderHud}`,
-  color: colors.textPrimary,
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap'
+  fontSize: 11,
+  fontFamily: 'inherit'
 }
 
-const insertionCellStyle: React.CSSProperties = {
-  padding: '6px 10px',
-  borderBottom: `1px dotted ${colors.borderHud}`,
+const pathCellInnerStyle: React.CSSProperties = {
+  overflow: 'hidden',
+  color: colors.textPrimary,
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  textAlign: 'left'
+}
+
+const insertionCellInnerStyle: React.CSSProperties = {
   color: colors.statusWorking,
   textAlign: 'right',
   whiteSpace: 'nowrap'
 }
 
-const deletionCellStyle: React.CSSProperties = {
-  ...insertionCellStyle,
+const deletionCellInnerStyle: React.CSSProperties = {
+  ...insertionCellInnerStyle,
   color: colors.statusFailed
 }
 

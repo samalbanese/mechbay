@@ -80,6 +80,36 @@ export interface DiffFileStat {
   deletions: number
 }
 
+/** One line inside a diff hunk. `oldNo`/`newNo` are omitted for lines that don't exist on that side. */
+export interface DiffLine {
+  kind: 'add' | 'del' | 'ctx'
+  text: string
+  oldNo?: number
+  newNo?: number
+}
+
+export interface DiffHunk {
+  header: string
+  lines: DiffLine[]
+}
+
+/** Per-file patch returned by DIFF_FILE_GET, rendered by DiffViewer. */
+export interface FilePatch {
+  path: string
+  binary: boolean
+  truncated: boolean
+  hunks: DiffHunk[]
+}
+
+/** Payload for DIFF_FILE_GET IPC call. */
+export interface DiffFileGetPayload {
+  deploymentId: string
+  path: string
+}
+
+/** Result for DIFF_FILE_GET IPC call. */
+export type DiffFileGetResult = { ok: true; patch: FilePatch } | { ok: false; error: string }
+
 export interface Deployment {
   id: string
   companionId: string

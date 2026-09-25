@@ -18,7 +18,8 @@ import type {
   BulkImportRunPayload,
   BulkImportRunResult,
   CompanionConfigurePayload,
-  CompanionConfigureResult
+  CompanionConfigureResult,
+  DiffFileGetResult
 } from '../shared/types'
 import { seedFacilities, type StateManager } from './state-manager'
 import type { SecretsManager } from './secrets'
@@ -35,7 +36,7 @@ import {
 import type { FsReader, FsNode } from './fs-reader'
 import { facilityTypeFromName } from './facility-type-hash'
 import { NarrationParser } from './log-narration-parser'
-import { captureGitBaseline, computeDiffSummary } from './git-diff'
+import { captureGitBaseline, computeDiffSummary, readFilePatch, resolveInRepo } from './git-diff'
 
 const GRID_W = 16
 const GRID_H = 16
@@ -190,10 +191,62 @@ export function registerIpc(opts: IpcDeps): void {
         settings: {
           ...prev.settings,
           ...(typeof patch.reduceMotion === 'boolean' ? { reduceMotion: patch.reduceMotion } : {}),
-          ...(typeof patch.crtOverlay === 'boolean' ? { crtOverlay: patch.crtOverlay } : {})
+          ...(typeof patch.crtOverlay === 'boolean' ? { crtOverlay: patch.crtOverlay } : {}),
         }
       }))
       return { ok: true }
+    }
+  )
+
+  // Per-file diff patch for the debrief's DiffViewer. Security boundary:
+  // args.path is only ever honored if it exactly matches one of the
+  // deployment's own diffFiles — the renderer must never be able to walk
+  // git into reading arbitrary files off disk. The resolved-path check
+  // below is defense in depth on top of that allowlist, not a substitute
+  // for it.
+  ipcMain.handle(
+    IPC.DIFF_FILE_GET,
+    async (_e, args: { deploymentId: string; path: string }): Promise<DiffFileGetResult> => {
+      if (
+        typeof args?.deploymentId !== 'string' ||
+        args.deploymentId.length === 0 ||
+        typeof args?.path !== 'string' ||
+        args.path.length === 0
+      ) {
+        return { ok: false, error: 'Invalid diff file request' }
+      }
+
+      const s = state.getState()
+      const deployment = s.deployments.find((d) => d.id === args.deploymentId)
+      if (!deployment) {
+        return { ok: false, error: `Deployment not found: ${args.deploymentId}` }
+      }
+
+      const known = deployment.diffFiles?.some((file) => file.path === args.path) ?? false
+      if (!known) {
+        return { ok: false, error: 'That path is not part of this deployment’s diff' }
+      }
+
+      const facility = s.facilities.find((f) => f.id === deployment.facilityId)
+      if (!facility || !facility.path) {
+        return { ok: false, error: 'Facility is missing or unlinked' }
+      }
+
+      // Defense in depth on top of the diffFiles allowlist above: resolveInRepo
+      // realpath-checks containment so a symlinked ancestor directory (or a
+      // symlinked facility root itself) can't be used to walk outside it.
+      const resolved = await resolveInRepo(facility.path, args.path)
+      if (!resolved) {
+        return { ok: false, error: 'Path escapes the facility directory' }
+      }
+
+      try {
+        const patch = await readFilePatch(facility.path, deployment.baselineSha ?? null, args.path)
+        if (!patch) return { ok: false, error: 'Unable to read diff for this file' }
+        return { ok: true, patch }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
     }
   )
 

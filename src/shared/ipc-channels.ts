@@ -26,7 +26,8 @@ export const IPC = {
   COMPANION_CONFIGURE: 'mechbay:companion:configure',
   SECRETS_SET: 'mechbay:secrets:set',
   SECRETS_STATUS: 'mechbay:secrets:status',
-  SETTINGS_UPDATE: 'mechbay:settings:update'
+  SETTINGS_UPDATE: 'mechbay:settings:update',
+  DIFF_FILE_GET: 'mechbay:diff:fileGet'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]

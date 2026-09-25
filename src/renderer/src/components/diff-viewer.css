@@ -1,0 +1,133 @@
+/*
+ * DiffViewer + debrief file-row styling. Tokens mirror
+ * src/renderer/src/theme.ts (colors.amber #efc36d, colors.cyan #91c7bc,
+ * colors.statusWorking #4caf50, colors.statusFailed #ff5252,
+ * colors.borderHud #34372e) — kept as plain CSS here since this file is
+ * loaded standalone, not through the theme module.
+ */
+
+.debrief-file-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.debrief-file-row:hover,
+.debrief-file-row:focus-visible {
+  background: rgba(239, 195, 109, 0.08);
+}
+
+.debrief-file-row:focus-visible {
+  outline: 1px solid #efc36d;
+  outline-offset: -1px;
+}
+
+.debrief-file-row[aria-expanded='true'] {
+  background: rgba(145, 199, 188, 0.1);
+  box-shadow: inset 2px 0 0 #91c7bc;
+}
+
+.diff-viewer {
+  margin-top: 10px;
+  border: 1px solid #34372e;
+  background: #0a0805;
+}
+
+.diff-viewer-message {
+  padding: 14px;
+  font: 11px var(--mono, 'IBM Plex Mono', monospace);
+  color: #abb0a3;
+}
+
+.diff-viewer-error {
+  color: #ff5252;
+}
+
+.diff-viewer-truncated {
+  padding: 6px 10px;
+  background: rgba(239, 195, 109, 0.12);
+  border-bottom: 1px solid #efc36d;
+  color: #efc36d;
+  font: 10px var(--mono, 'IBM Plex Mono', monospace);
+  letter-spacing: 0.08em;
+}
+
+.diff-viewer-scroll {
+  max-height: 360px;
+  overflow: auto;
+}
+
+.diff-hunk + .diff-hunk {
+  border-top: 1px solid #34372e;
+}
+
+.diff-hunk-header {
+  position: sticky;
+  left: 0;
+  padding: 5px 10px;
+  background: rgba(239, 195, 109, 0.14);
+  border-bottom: 1px solid rgba(239, 195, 109, 0.35);
+  color: #efc36d;
+  font: 10px var(--mono, 'IBM Plex Mono', monospace);
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.diff-line {
+  display: grid;
+  /* max-content + min-width: the whole patch scrolls sideways as one
+     block (one scrollbar, backgrounds span the full row) instead of every
+     long line growing its own scrollbar. */
+  grid-template-columns: 40px 40px 14px max-content;
+  width: max-content;
+  min-width: 100%;
+  font: 11px/1.5 var(--mono, 'IBM Plex Mono', monospace);
+  white-space: pre;
+}
+
+.diff-line-no {
+  padding: 0 6px;
+  text-align: right;
+  color: #5c6154;
+  border-right: 1px solid #24261f;
+  user-select: none;
+}
+
+.diff-line-marker {
+  text-align: center;
+  user-select: none;
+}
+
+.diff-line-text {
+  padding: 0 10px 0 4px;
+  color: #ecece2;
+}
+
+.diff-line-ctx {
+  color: #abb0a3;
+}
+
+.diff-line-add {
+  background: rgba(178, 206, 140, 0.12);
+}
+
+.diff-line-add .diff-line-marker,
+.diff-line-add .diff-line-text {
+  color: #b2ce8c;
+}
+
+.diff-line-del {
+  background: rgba(255, 82, 82, 0.1);
+}
+
+.diff-line-del .diff-line-marker,
+.diff-line-del .diff-line-text {
+  color: #ff5252;
+}
