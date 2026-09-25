@@ -9,12 +9,31 @@ files:
   - '!docs/*'
   - '!.tmp/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
-  - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
+  - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md,CLAUDE.md,CONTRIBUTING.md,TODO.md,VISION.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
-  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json,vitest.config.ts}'
+  - '!scripts/*.{ts,mjs}'
+  - '!site/*'
+  - '!artifacts/*'
+  # Source art: the renderer imports these via `?url`, so electron-vite
+  # already copies every sprite it uses into out/renderer/assets.
+  - '!assets/**'
+  - '!.github/*'
+  - '!.agents/*'
+  - '!.superpowers/*'
+  - '!.worktrees/*'
+  - '!.claude/*'
+  - '!*.tsbuildinfo'
+  - '!wrangler.jsonc'
 asarUnpack:
   - resources/**
   - out/renderer/assets/*.png
+  - scripts/kimi_fireworks.py
+publish:
+  provider: github
+  owner: samalbanese
+  repo: mechbay
+  releaseType: draft
 win:
   executableName: MechBay
   # DECISION NEEDED (before first shipped build): code-signing.
@@ -35,11 +54,18 @@ nsis:
 mac:
   category: public.app-category.developer-tools
   entitlementsInherit: build/entitlements.mac.plist
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
   extendInfo:
     - NSDocumentsFolderUsageDescription: MechBay opens project directories you select to stream CLI output and show file trees.
   notarize: false
 dmg:
-  artifactName: ${productName}-${version}.${ext}
+  # ${arch} is required: mac builds both arm64 and x64, and without it the
+  # two DMGs share one filename and overwrite each other in the release.
+  artifactName: ${productName}-${version}-${arch}.${ext}
 linux:
   target:
     - AppImage
@@ -52,6 +78,6 @@ linux:
 appImage:
   artifactName: ${productName}-${version}.${ext}
 npmRebuild: false
-# Auto-update publishing not configured yet — this block is intentionally
-# omitted. electron-builder will skip publish on missing config. Add a
-# `publish:` block pointing to a GitHub Release or an S3 bucket when ready.
+# Publishing goes to GitHub Releases as a draft (see `publish:` above).
+# Draft is deliberate: the maintainer reviews the generated release and
+# clicks Publish manually rather than it going live automatically.

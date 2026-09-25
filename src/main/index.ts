@@ -1,5 +1,5 @@
 import { app, shell, BrowserWindow } from 'electron'
-import { dirname, join } from 'path'
+import { dirname, join, sep } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import Store from 'electron-store'
 import icon from '../../resources/icon.png?asset'
@@ -111,9 +111,13 @@ app.whenReady().then(() => {
 
   // The Kimi runner shells out to our bundled Fireworks wrapper
   // (scripts/kimi_fireworks.py). app.getAppPath() resolves to the repo
-  // root in dev; in packaged builds it points at the asar root, so we
-  // just need `scripts/` to be shipped with the bundle.
-  const kimiScriptPath = join(app.getAppPath(), 'scripts', 'kimi_fireworks.py')
+  // root in dev. In packaged builds it points INSIDE app.asar, which
+  // python can't read, so electron-builder.yml asarUnpacks the script and
+  // we redirect to the unpacked copy. The replace is a no-op in dev.
+  const kimiScriptPath = join(app.getAppPath(), 'scripts', 'kimi_fireworks.py').replace(
+    `app.asar${sep}`,
+    `app.asar.unpacked${sep}`
+  )
 
   const runners: Record<AgentFamily, Runner> = demoMode
     ? {

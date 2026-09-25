@@ -1,0 +1,70 @@
+name: Bug report
+description: Something in MechBay isn't working right
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: A clear description of the bug.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: What should have happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: How can we see this ourselves?
+      placeholder: |
+        1. Open a project
+        2. Deploy a mech with...
+        3. See error
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: MechBay version
+      description: Found in the app title bar or `package.json` if running from source.
+      placeholder: e.g. 1.3.0
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: runtimes
+    attributes:
+      label: Which runtime(s) does this involve?
+      options:
+        - label: Claude Code
+        - label: Codex
+        - label: Gemini CLI
+        - label: Kimi via Fireworks
+        - label: Custom CLI
+        - label: Demo mode
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste any error output or console logs. This is automatically formatted as code, no backticks needed.
+      render: shell

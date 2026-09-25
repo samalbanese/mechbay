@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest something new for MechBay
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that MechBay doesn't support well today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed experience
+      description: What should this feel like from the player's seat? Describe the outcome, not the implementation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds you're using now, or other approaches you thought about.
+    validations:
+      required: false
